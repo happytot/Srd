@@ -1,0 +1,12 @@
+/* --- Layout Components --- */
+.dashboard-container {
+  @apply flex min-h-screen bg-zinc-50 font-sans text-zinc-900;
+}
+
+.sidebar {
+  @apply w-64 bg-white border-r border-zinc-200 p-6 hidden xl:flex flex-col;
+}
+
+.main-content {
+  @apply flex-1 p-8 overflow-y-auto;
+}

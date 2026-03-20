@@ -1,0 +1,11 @@
+@import "tailwindcss";
+
+@import "./styles/layout.css";
+@import "./styles/navigation.css";
+@import "./styles/stat-cards.css";
+@import "./styles/tables.css";
+@import "./styles/ui-elements.css";
+
+@theme {
+  --font-sans: "Inter", "system-ui", "sans-serif";
+}

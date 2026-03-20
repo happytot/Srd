@@ -1,0 +1,12 @@
+/* --- Navigation --- */
+.nav-item {
+  @apply p-2.5 rounded-lg flex items-center gap-3 text-sm font-medium cursor-pointer transition-all;
+}
+
+.nav-item-active {
+  @apply bg-black text-white;
+}
+
+.nav-item-inactive {
+  @apply text-zinc-500 hover:bg-zinc-100;
+}

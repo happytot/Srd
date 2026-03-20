@@ -1,0 +1,12 @@
+/* --- UI Elements --- */
+.search-input {
+  @apply bg-zinc-100 border-none rounded-lg px-4 py-2 w-64 text-sm outline-none focus:ring-1 focus:ring-black/10 transition-all;
+}
+
+.badge-admin {
+  @apply text-zinc-400 bg-zinc-100 px-1.5 py-0.5 rounded inline-block text-[10px];
+}
+
+.stock-item {
+  @apply flex justify-between items-center p-3 border border-zinc-100 rounded-lg text-xs hover:bg-zinc-50 transition-all;
+}

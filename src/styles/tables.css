@@ -1,0 +1,20 @@
+/* --- Tables & Lists --- */
+.content-card {
+  @apply bg-white p-6 rounded-xl border border-zinc-200 shadow-sm;
+}
+
+.table-container {
+  @apply bg-white rounded-xl border border-zinc-200 overflow-hidden mt-8;
+}
+
+.table-head-cell {
+  @apply px-6 py-4 text-[10px] font-bold text-zinc-400 uppercase tracking-widest border-b border-zinc-50 text-left;
+}
+
+.table-row {
+  @apply hover:bg-zinc-50 transition-colors text-xs;
+}
+
+.table-data-cell {
+  @apply px-6 py-4;
+}

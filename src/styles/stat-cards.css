@@ -1,0 +1,12 @@
+/* --- Stat Cards --- */
+.stat-card {
+  @apply bg-white p-6 rounded-xl border border-zinc-200 shadow-sm transition-all hover:shadow-md;
+}
+
+.stat-card-title {
+  @apply text-[10px] font-bold text-zinc-400 uppercase tracking-widest;
+}
+
+.stat-card-value {
+  @apply text-3xl font-bold mt-2 text-zinc-900;
+}

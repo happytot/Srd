@@ -1,0 +1,446 @@
+import { useState, useEffect, useMemo } from 'react'
+import { auth, db } from './firebase'
+import { doc, getDoc, collection, query, where, orderBy, onSnapshot } from 'firebase/firestore'
+import { onAuthStateChanged, signOut } from 'firebase/auth'
+import LoginPage from './LoginPage'
+import SalesReport from './SalesReport'
+import InventoryAlerts from './InventoryAlerts'
+import UserManagement from './UserManagement'
+import SalesAnalytics from './SalesAnalytics'
+import SalesForecasting from './SalesForecasting'
+import GlobalDateFilter from './components/GlobalDateFilter'
+
+const StatCard = ({ title, value, subtext, icon }) => (
+  <div className="stat-card">
+    <div className="flex justify-between items-start">
+      <p className="stat-card-title">{title}</p>
+      <span className="text-zinc-400">{icon}</span>
+    </div>
+    <p className="stat-card-value">{value}</p>
+    <p className="text-xs text-zinc-500 mt-1 flex gap-1">
+      <span className={subtext.includes('+') ? "text-emerald-600 font-bold" : ""}>{subtext.split(' ')[0]}</span>
+      <span className="text-zinc-400 inline-block">{subtext.split(' ').slice(1).join(' ')}</span>
+    </p>
+  </div>
+);
+
+const Overview = ({ globalDateRange, globalCustomStart, globalCustomEnd }) => {
+  const [stats, setStats] = useState({
+    todaySales: 0,
+    yesterdaySales: 0,
+    todayOrders: 0,
+    avgOrderValue: 0,
+    topProduct: 'N/A',
+    topProductSales: 0,
+    productTable: [],
+    lowStock: [],
+    salesTrend: []
+  });
+  const [allOrders, setAllOrders] = useState([]);
+
+  const trendDays = useMemo(() => {
+    if (globalDateRange === 'Today') return 1;
+    if (globalDateRange === 'Last 7 Days') return 7;
+    if (globalDateRange === 'Month to Date') return new Date().getDate();
+    if (globalDateRange === 'Last Quarter') return 90;
+    if (globalDateRange === 'Custom') {
+      if (globalCustomStart && globalCustomEnd) {
+        const start = new Date(globalCustomStart);
+        const end = new Date(globalCustomEnd);
+        return Math.max(1, Math.ceil((end - start) / (1000 * 60 * 60 * 24)) + 1);
+      }
+      return 30;
+    }
+    return 30; // fallback
+  }, [globalDateRange, globalCustomStart, globalCustomEnd]);
+
+  const [hoveredPoint, setHoveredPoint] = useState(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    const ordersQuery = query(collection(db, 'orders'), orderBy('createdAt', 'desc'));
+    const unsubOrders = onSnapshot(ordersQuery, (snapshot) => {
+      setAllOrders(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+    });
+
+    const inventoryQuery = query(collection(db, 'inventory'), where('status', '!=', 'deleted'));
+    const unsubInventory = onSnapshot(inventoryQuery, (snapshot) => {
+      const lowStockList = [];
+      snapshot.docs.forEach(doc => {
+        const inv = doc.data();
+        const qty = Number(inv.quantity) || 0;
+        const threshold = Number(inv.lowStockThreshold) || Math.max(10, qty * 0.1);
+
+        let status = 'Normal';
+        if (qty <= threshold * 0.3) status = 'Critical';
+        else if (qty <= threshold || inv.isLowStock) status = 'Low';
+
+        if (status !== 'Normal') {
+          lowStockList.push({ id: doc.id, name: inv.name || 'Unnamed', status });
+        }
+      });
+      lowStockList.sort((a, b) => (a.status === 'Critical' ? -1 : 1));
+
+      setStats(prev => ({
+        ...prev,
+        lowStock: lowStockList.slice(0, 4)
+      }));
+      setLoading(false);
+    });
+
+    return () => {
+      unsubOrders();
+      unsubInventory();
+    };
+  }, []);
+
+  useEffect(() => {
+    if (loading) return;
+
+    const now = new Date();
+    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const yesterday = new Date(today);
+    yesterday.setDate(yesterday.getDate() - 1);
+
+    let todaySales = 0;
+    let yesterdaySales = 0;
+    let todayOrders = 0;
+    let productCounts = {};
+    const trendData = [];
+
+    for (let i = trendDays - 1; i >= 0; i--) {
+      const d = new Date(today);
+      d.setDate(d.getDate() - i);
+      trendData.push({
+        dateLabel: d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
+        sales: 0,
+        itemsSold: 0
+      });
+    }
+
+    allOrders.forEach(order => {
+      if (!order.createdAt) return;
+      const date = order.createdAt.toDate();
+      const amt = Number(order.totalAmount) || 0;
+
+      const diffTime = today.getTime() - new Date(date.getFullYear(), date.getMonth(), date.getDate()).getTime();
+      const diffDays = Math.round(diffTime / (1000 * 60 * 60 * 24));
+
+      let itemsCount = 0;
+      if (order.items) {
+        order.items.forEach(it => { itemsCount += (Number(it.quantity) || 1); });
+      }
+
+      if (diffDays >= 0 && diffDays < trendDays) {
+        const idx = trendDays - 1 - diffDays;
+        trendData[idx].sales += amt;
+        trendData[idx].itemsSold += itemsCount;
+      }
+
+      if (date >= today) {
+        todaySales += amt;
+        todayOrders++;
+      } else if (date >= yesterday && date < today) {
+        yesterdaySales += amt;
+      }
+
+      if (order.items) {
+        order.items.forEach(item => {
+          if (!productCounts[item.name]) {
+            productCounts[item.name] = { sales: 0, revenue: 0 };
+          }
+          const itemQty = Number(item.quantity) || 1;
+          const itemPrice = Number(item.price) || 0;
+          productCounts[item.name].sales += itemQty;
+          productCounts[item.name].revenue += (itemPrice * itemQty);
+        });
+      }
+    });
+
+    const avgOrderValue = todayOrders > 0 ? (todaySales / todayOrders) : 0;
+    const sortedProducts = Object.entries(productCounts)
+      .map(([name, data]) => ({ name, ...data }))
+      .sort((a, b) => b.sales - a.sales);
+
+    const topProduct = sortedProducts.length > 0 ? sortedProducts[0] : null;
+
+    setStats(prev => ({
+      ...prev,
+      todaySales,
+      yesterdaySales,
+      todayOrders,
+      avgOrderValue,
+      topProduct: topProduct ? topProduct.name : 'N/A',
+      topProductSales: topProduct ? topProduct.sales : 0,
+      productTable: sortedProducts.slice(0, 5),
+      salesTrend: trendData
+    }));
+  }, [allOrders, trendDays, loading]);
+
+  if (loading) {
+    return (
+      <div className="flex justify-center items-center py-20 text-zinc-400">
+        <div className="animate-spin text-3xl mb-2 mr-3 inline-block">⏳</div>
+        <p>Crunching the numbers...</p>
+      </div>
+    );
+  }
+
+  const salesDiff = stats.yesterdaySales > 0 ? ((stats.todaySales - stats.yesterdaySales) / stats.yesterdaySales) * 100 : 0;
+  const salesDiffText = stats.yesterdaySales === 0 ? "No sales yesterday" : `${salesDiff > 0 ? '+' : ''}${salesDiff.toFixed(1)}% vs yesterday`;
+
+  const generateTrendPath = () => {
+    const trend = stats.salesTrend || [];
+    if (trend.length === 0) return { path: '', points: [], maxSales: 1 };
+
+    const maxSales = Math.max(...trend.map(t => t.sales), 1);
+    const points = trend.map((val, i) => ({
+      x: (i / Math.max(1, trendDays - 1)) * 400,
+      y: 90 - ((val.sales / maxSales) * 80)
+    }));
+
+    let path = `M ${points[0].x},${points[0].y}`;
+    for (let i = 1; i < points.length; i++) {
+      const p = points[i - 1];
+      const c = points[i];
+      const midX = (p.x + c.x) / 2;
+      path += ` C ${midX},${p.y} ${midX},${c.y} ${c.x},${c.y}`;
+    }
+    return { path, points, maxSales };
+  };
+
+  const trendDataObj = generateTrendPath();
+
+  return (
+    <>
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
+        <StatCard title="Today's Sales" value={`₱${stats.todaySales.toLocaleString(undefined, { minimumFractionDigits: 2 })}`} subtext={salesDiffText} icon="" />
+        <StatCard title="Total Orders" value={stats.todayOrders} subtext="Orders today" icon="" />
+        <StatCard title="Avg. Order Value" value={`₱${stats.avgOrderValue.toLocaleString(undefined, { minimumFractionDigits: 2 })}`} subtext="Average today" icon="" />
+        <StatCard title="Top Product" value={stats.topProduct} subtext={`${stats.topProductSales} units all-time`} icon="" />
+      </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        <div className="lg:col-span-2 content-card h-[350px]">
+          <div className="flex justify-between items-start mb-6">
+            <div>
+              <h3 className="font-bold text-sm mb-1">Sales Trend</h3>
+              <p className="text-[10px] text-zinc-400">Order velocity & timeline</p>
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="text-xs font-bold text-emerald-600 bg-emerald-50 px-2 py-1 rounded">Global Sync Active</span>
+            </div>
+          </div>
+
+          <div className="w-full h-40 mt-6 border-b border-zinc-100 relative">
+            <svg viewBox="0 -50 400 150" className="w-full h-full overflow-visible" onMouseLeave={() => setHoveredPoint(null)}>
+              <path d={trendDataObj.path} fill="none" stroke="black" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="animate-in fade-in zoom-in-95 duration-500" />
+
+              {trendDataObj.points.map((pt, i) => (
+                <g key={i} className="cursor-pointer outline-none" onMouseEnter={() => setHoveredPoint(i)} onTouchStart={() => setHoveredPoint(i)}>
+                  <circle cx={pt.x} cy={pt.y} r="16" fill="transparent" />
+                  <circle cx={pt.x} cy={pt.y} r={hoveredPoint === i ? 4.5 : 0} fill={hoveredPoint === i ? "black" : "transparent"} stroke={hoveredPoint === i ? "white" : "transparent"} strokeWidth="1.5" className="transition-all duration-200" />
+
+                  {hoveredPoint === i && stats.salesTrend[i] && (
+                    <g className="animate-in slide-in-from-bottom-1 fade-in duration-100 relative z-50">
+                      <rect x={pt.x - 50} y={pt.y - 65} width="100" height="52" fill="#18181b" rx="6" />
+                      <polygon points={`${pt.x - 5},${pt.y - 14} ${pt.x + 5},${pt.y - 14} ${pt.x},${pt.y - 9}`} fill="#18181b" />
+                      <text x={pt.x} y={pt.y - 48} fill="#a1a1aa" fontSize="9" fontWeight="bold" textAnchor="middle">{stats.salesTrend[i].dateLabel}</text>
+                      <text x={pt.x} y={pt.y - 32} fill="white" fontSize="13" fontWeight="bold" textAnchor="middle">₱{stats.salesTrend[i].sales.toLocaleString(undefined, { minimumFractionDigits: 2 })}</text>
+                      <text x={pt.x} y={pt.y - 20} fill="#a1a1aa" fontSize="9" textAnchor="middle">{stats.salesTrend[i].itemsSold} items sold</text>
+                    </g>
+                  )}
+                </g>
+              ))}
+            </svg>
+          </div>
+
+          <div className="flex justify-between items-center text-[10px] text-zinc-400 mt-3 font-medium px-1">
+            <span>{stats.salesTrend.length > 0 ? stats.salesTrend[0].dateLabel : ''}</span>
+            <span>{stats.salesTrend.length > 2 ? stats.salesTrend[Math.floor(stats.salesTrend.length / 2)].dateLabel : ''}</span>
+            <span>{stats.salesTrend.length > 1 ? stats.salesTrend[stats.salesTrend.length - 1].dateLabel : 'Today'}</span>
+          </div>
+        </div>
+
+        <div className="content-card flex flex-col">
+          <h3 className="font-bold text-sm mb-4 flex justify-between">
+            Low Stock Alerts
+            <span className="text-[10px] text-zinc-400 font-normal">{stats.lowStock.length} items</span>
+          </h3>
+          <div className="space-y-3">
+            {stats.lowStock.length > 0 ? stats.lowStock.map(item => (
+              <div key={item.id} className="stock-item border-b border-zinc-50 pb-2 last:border-0 flex justify-between items-center">
+                <div className="flex flex-col">
+                  <span className="font-bold text-sm">{item.name}</span>
+                  <span className={`text-[10px] font-bold uppercase tracking-wider ${item.status === 'Critical' ? 'text-rose-500' : 'text-amber-500'}`}>{item.status}</span>
+                </div>
+                <button className="text-zinc-400 hover:text-black font-bold text-[10px] transition-colors">RESTOCK</button>
+              </div>
+            )) : (
+              <p className="text-sm text-zinc-400 py-4 text-center">All inventory stock levels are healthy!</p>
+            )}
+          </div>
+        </div>
+      </div>
+
+      <section className="table-container">
+        <table className="w-full border-collapse">
+          <thead>
+            <tr>
+              <th className="table-head-cell">Top Products (All-Time)</th>
+              <th className="table-head-cell">Units Sold</th>
+              <th className="table-head-cell">Estimated Revenue</th>
+              <th className="table-head-cell">Status</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-zinc-50">
+            {stats.productTable.map((p) => (
+              <tr key={p.name} className="table-row">
+                <td className="table-data-cell font-bold truncate max-w-[200px]">{p.name}</td>
+                <td className="table-data-cell">{p.sales}</td>
+                <td className="table-data-cell font-bold">₱{p.revenue.toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
+                <td className="table-data-cell">
+                  <span className="text-emerald-600 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider">
+                    Available
+                  </span>
+                </td>
+              </tr>
+            ))}
+            {stats.productTable.length === 0 && (
+              <tr className="table-row">
+                <td colSpan="4" className="table-data-cell text-center text-zinc-400 py-8">No transaction data available yet.</td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </section>
+    </>
+  );
+};
+
+function App() {
+  const [activeTab, setActiveTab] = useState('Overview');
+  const [user, setUser] = useState(null);
+  const [isAuthLoading, setIsAuthLoading] = useState(true);
+
+  // Global Date State
+  const [globalDateRange, setGlobalDateRange] = useState('Last 7 Days');
+  const [globalCustomStart, setGlobalCustomStart] = useState('');
+  const [globalCustomEnd, setGlobalCustomEnd] = useState('');
+
+  useEffect(() => {
+    const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
+      if (firebaseUser) {
+        try {
+          const userDocRef = doc(db, 'users', firebaseUser.uid);
+          const userDocSnap = await getDoc(userDocRef);
+          if (userDocSnap.exists()) {
+            setUser({ uid: firebaseUser.uid, email: firebaseUser.email, ...userDocSnap.data() });
+          } else {
+            auth.signOut();
+            setUser(null);
+          }
+        } catch (error) {
+          console.error("Error fetching user data:", error);
+          setUser(null);
+        }
+      } else {
+        setUser(null);
+      }
+      setIsAuthLoading(false);
+    });
+    return () => unsubscribe();
+  }, []);
+
+  if (isAuthLoading) {
+    return <div className="min-h-screen bg-zinc-50 flex flex-col justify-center items-center font-sans"><div className="w-12 h-12 bg-black rounded-xl flex items-center justify-center text-white font-bold text-xl shadow-lg animate-pulse">C</div><p className="mt-4 text-sm text-zinc-500 font-medium">Loading Dashboard...</p></div>;
+  }
+
+  if (!user) {
+    return <LoginPage onLogin={(userData) => setUser(userData)} />;
+  }
+
+
+  const navItems = [
+    { name: 'Overview', icon: '' },
+    { name: 'Sales Analytics', icon: '' },
+    { name: 'Sales Forecasting', icon: '' },
+    { name: 'Sales Reports', icon: '' },
+    { name: 'Inventory Alerts', icon: '' },
+    ...(user.role === 'Admin' ? [{ name: 'User Management', icon: '' }] : [])
+  ];
+
+  return (
+    <div className="dashboard-container">
+      <aside className="sidebar">
+        <div className="flex items-center gap-3 mb-10">
+          <div className="w-8 h-8 bg-black rounded-lg flex items-center justify-center text-white font-bold text-sm">C</div>
+          <div>
+            <h1 className="text-sm font-bold leading-none">Coffee & Tea</h1>
+            <p className="text-[10px] text-zinc-400 mt-1">Sales Dashboard</p>
+          </div>
+        </div>
+
+        <nav className="space-y-1 flex-1">
+          {navItems.map((item) => (
+            <div
+              key={item.name}
+              onClick={() => setActiveTab(item.name)}
+              className={`nav-item ${activeTab === item.name ? 'nav-item-active' : 'nav-item-inactive'}`}
+            >
+              <span>{item.icon} {item.name}</span>
+            </div>
+          ))}
+        </nav>
+
+        <div className="border-t border-zinc-100 pt-4 flex items-center gap-3">
+          <div className="w-8 h-8 rounded-full bg-zinc-200 overflow-hidden shrink-0">
+            <img src={user.avatar || `https://api.dicebear.com/7.x/avataaars/svg?seed=${user.name || 'User'}`} alt="avatar" />
+          </div>
+          <div className="overflow-hidden flex-1">
+            <p className="text-xs font-bold truncate">{user.name}</p>
+            <span className={user.role === 'Admin' ? 'badge-admin' : 'text-[10px] font-bold uppercase tracking-wider text-violet-700 bg-violet-50 px-2 py-0.5 rounded-full'}>{user.role}</span>
+          </div>
+          <button
+            onClick={() => signOut(auth)}
+            className="text-[10px] font-bold text-zinc-400 hover:text-red-500 transition-colors uppercase"
+          >
+            Logout
+          </button>
+        </div>
+      </aside>
+
+      <main className="main-content">
+        <header className="flex flex-col xl:flex-row justify-between items-start xl:items-center gap-4 mb-8">
+          <h2 className="text-xl font-bold tracking-tight">{activeTab}</h2>
+          <div className="flex flex-wrap items-center gap-4 w-full xl:w-auto">
+            {activeTab !== 'User Management' && activeTab !== 'Inventory Alerts' && (
+              <GlobalDateFilter
+                globalDateRange={globalDateRange} setGlobalDateRange={setGlobalDateRange}
+                globalCustomStart={globalCustomStart} setGlobalCustomStart={setGlobalCustomStart}
+                globalCustomEnd={globalCustomEnd} setGlobalCustomEnd={setGlobalCustomEnd}
+              />
+            )}
+            <input type="text" placeholder="Search reports..." className="search-input" />
+          </div>
+        </header>
+
+        {activeTab === 'Sales Analytics' ? (
+          <SalesAnalytics globalDateRange={globalDateRange} globalCustomStart={globalCustomStart} globalCustomEnd={globalCustomEnd} />
+        ) : activeTab === 'Sales Forecasting' ? (
+          <SalesForecasting globalDateRange={globalDateRange} globalCustomStart={globalCustomStart} globalCustomEnd={globalCustomEnd} />
+        ) : activeTab === 'Sales Reports' ? (
+          <SalesReport globalDateRange={globalDateRange} globalCustomStart={globalCustomStart} globalCustomEnd={globalCustomEnd} />
+        ) : activeTab === 'Inventory Alerts' ? (
+          <InventoryAlerts />
+        ) : activeTab === 'User Management' && user.role === 'Admin' ? (
+          <UserManagement currentUser={user} />
+        ) : (
+          <Overview globalDateRange={globalDateRange} globalCustomStart={globalCustomStart} globalCustomEnd={globalCustomEnd} />
+        )}
+      </main>
+    </div>
+  );
+}
+
+export default App;
