@@ -4,9 +4,9 @@
 }
 
 .sidebar {
-  @apply w-64 bg-white border-r border-zinc-200 p-6 hidden xl:flex flex-col;
+  @apply hidden md:flex flex-col w-52 xl:w-64 bg-white border-r border-zinc-200 p-4 xl:p-6 transition-all duration-300;
 }
 
 .main-content {
-  @apply flex-1 p-8 overflow-y-auto;
+  @apply flex-1 p-4 md:p-8 overflow-y-auto;
 }

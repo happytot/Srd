@@ -1,7 +1,7 @@
 import { useState } from 'react';
-import { signInWithEmailAndPassword, createUserWithEmailAndPassword } from 'firebase/auth';
-import { doc, getDoc, collection, addDoc, serverTimestamp, setDoc } from 'firebase/firestore';
-import { auth, db, secondaryAuth } from './firebase';
+import { signInWithEmailAndPassword } from 'firebase/auth';
+import { doc, getDoc } from 'firebase/firestore';
+import { auth, db } from './firebase';
 
 const LoginPage = ({ onLogin }) => {
   const [email, setEmail] = useState('');
@@ -20,35 +20,20 @@ const LoginPage = ({ onLogin }) => {
       const userCredential = await signInWithEmailAndPassword(auth, email, password);
       const user = userCredential.user;
 
-      // Force a token refresh to ensure we have the latest Custom Claims from the POS/Inventory team
+      // Force a token refresh to check for Custom Claims from the POS/Inventory team
       await user.getIdToken(true);
       const idTokenResult = await user.getIdTokenResult();
-      const authRole = idTokenResult.claims.role;
+      const authRole = idTokenResult.claims?.role;
 
-      // Also fetch the UI data from the users collection
+      // Fetch the UI data from the users collection (Allowed because isOwner(userId) is true in rules)
       const userDocRef = doc(db, 'users', user.uid);
       const userDocSnap = await getDoc(userDocRef);
 
       if (userDocSnap.exists()) {
         const userData = userDocSnap.data();
 
-        // Critical Check: Verify they have the Custom Claim required by the Firestore rules
-        if (authRole !== 'admin' && authRole !== 'manager' && userData.role !== 'Admin') {
-          console.warn("User lacks custom claims. Firestore reads may fail.");
-        }
-
-        try {
-          // Note: If audit_logs is not in the shared Firestore rules, this write will fail.
-          // You may need to ask the team to add match /audit_logs/{logId} { allow create: if isAuthenticated(); }
-          await addDoc(collection(db, 'audit_logs'), {
-            action: 'USER_LOGIN',
-            userId: user.uid,
-            email: user.email,
-            timestamp: serverTimestamp(),
-            details: 'Successful login to Sales Dashboard'
-          });
-        } catch (logError) {
-          console.error("Failed to write audit log (Likely blocked by shared Firestore Rules):", logError);
+        if (authRole !== 'admin' && authRole !== 'manager') {
+          console.warn("⚠️ User lacks custom claims. The shared Firestore rules will block most reads.");
         }
 
         onLogin({ uid: user.uid, email: user.email, authRole, ...userData });
@@ -59,36 +44,6 @@ const LoginPage = ({ onLogin }) => {
     } catch (err) {
       console.error("Login Error:", err);
       setError('Invalid email or password. Please try again.');
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  const handleSeedUsers = async () => {
-    setIsLoading(true);
-    setError('');
-    try {
-      // Create Admin
-      try {
-        const adminCred = await createUserWithEmailAndPassword(secondaryAuth, "srdadmin@coffee.com", "password123");
-        await setDoc(doc(db, 'users', adminCred.user.uid), {
-          name: "System Admin",
-          email: "srdadmin@coffee.com",
-          role: "admin", // Changed to lowercase to match POS rules expectation
-          status: "Active",
-          createdAt: serverTimestamp(),
-          avatar: `https://api.dicebear.com/7.x/avataaars/svg?seed=Admin`
-        });
-        console.log("Admin created in Auth and Firestore.");
-        alert("NOTE: You must manually assign the 'admin' Custom Claim to srdadmin@coffee.com via Firebase CLI or Cloud Functions for the Firestore Rules to allow access.");
-      } catch (e) {
-        console.log("Admin might already exist", e.message);
-      }
-
-      alert("Default user seeded! Try logging in.");
-    } catch (err) {
-      console.error(err);
-      setError("Failed to seed users. " + err.message);
     } finally {
       setIsLoading(false);
     }
@@ -186,17 +141,6 @@ const LoginPage = ({ onLogin }) => {
               </button>
             </div>
           </form>
-
-          {/* Temporary button config */}
-          <div className="mt-6 text-center">
-            <button
-              onClick={handleSeedUsers}
-              disabled={isLoading}
-              className="text-xs text-zinc-500 hover:text-black underline disabled:opacity-50"
-            >
-              Seed Default Accounts (Click Once)
-            </button>
-          </div>
         </div>
       </div>
     </div>

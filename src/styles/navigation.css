@@ -1,6 +1,6 @@
 /* --- Navigation --- */
 .nav-item {
-  @apply p-2.5 rounded-lg flex items-center gap-3 text-sm font-medium cursor-pointer transition-all;
+  @apply p-2 xl:p-2.5 rounded-lg flex items-center gap-2 xl:gap-3 text-sm font-medium cursor-pointer transition-all;
 }
 
 .nav-item-active {
