@@ -112,22 +112,58 @@ const SalesReport = ({ globalDateRange, globalCustomStart, globalCustomEnd }) =>
     }
   };
 
-  const handleExportExcel = () => {
-    if (filteredData.length === 0) return;
-    const exportData = filteredData.map(row => ({
+  const getReportName = () => {
+    let base = 'Sales Report';
+    switch(reportFilter) {
+      case 'Daily': base = 'Daily Sales Report'; break;
+      case 'Weekly': base = 'Weekly Sales Report'; break;
+      case 'Monthly': base = 'Monthly Sales Report'; break;
+      case 'Quarterly': base = 'Quarterly Sales Report'; break;
+      case 'Annually': base = 'Annual Sales Report'; break;
+    }
+    if (categoryFilter !== 'All Categories') {
+      return `${base} for ${categoryFilter}`;
+    }
+    return base;
+  };
+
+  const getFileNamePrefix = () => {
+    let base = 'Sales_Report';
+    switch(reportFilter) {
+      case 'Daily': base = 'Daily_Sales_Report'; break;
+      case 'Weekly': base = 'Weekly_Sales_Report'; break;
+      case 'Monthly': base = 'Monthly_Sales_Report'; break;
+      case 'Quarterly': base = 'Quarterly_Sales_Report'; break;
+      case 'Annually': base = 'Annual_Sales_Report'; break;
+    }
+    if (categoryFilter !== 'All Categories') {
+      return `${base}_${categoryFilter.replace(/\s+/g, '_')}`;
+    }
+    return base;
+  };
+
+  const generateExportData = () => {
+    return filteredData.map(row => ({
       'Transaction ID': row.id,
       'Date': row.date,
       'Cashier': row.customer,
       'Items': row.product,
       'Category': row.category,
-      'Amount': Number(row.amount), // Presever Number format
+      'Amount': Number(row.amount), // Preserve Number format
       'Status': row.status
     }));
-    ExportEngine.exportToExcel(exportData, 'Sales_Report');
+  };
+
+  const handleExportExcel = () => {
+    const exportData = generateExportData();
+    if (exportData.length === 0) return;
+    ExportEngine.exportToExcel(exportData, getFileNamePrefix(), 'Coffee and Tea Connection', getReportName());
   };
 
   const handleExportPDF = () => {
-    ExportEngine.exportToPDF('sales-report-content', 'Sales_Report', 'Sales Report Dashboard');
+    const exportData = generateExportData();
+    if (exportData.length === 0) return;
+    ExportEngine.exportToPDF(exportData, getFileNamePrefix(), 'Coffee and Tea Connection', getReportName());
   };
 
   return (
