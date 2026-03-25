@@ -5,6 +5,7 @@ import ExportEngine from './utils/ExportEngine';
 
 const SalesReport = ({ globalDateRange, globalCustomStart, globalCustomEnd }) => {
   const [categoryFilter, setCategoryFilter] = useState('All Categories');
+  const [reportFilter, setReportFilter] = useState('Daily');
   const [reportData, setReportData] = useState([]);
   const [loading, setLoading] = useState(true);
 
@@ -39,25 +40,25 @@ const SalesReport = ({ globalDateRange, globalCustomStart, globalCustomEnd }) =>
         setLoading(false);
       }
     };
-    
+
     fetchOrders();
   }, []);
 
   const filteredData = reportData.map(item => {
     let matchedItem = { ...item, isMatch: true };
-    
+
     if (categoryFilter !== 'All Categories') {
-      const matchedInnerItems = item.originalItems.filter(i => 
+      const matchedInnerItems = item.originalItems.filter(i =>
         i.category && i.category.toLowerCase().includes(categoryFilter.toLowerCase())
       );
-      
+
       if (matchedInnerItems.length > 0) {
         const totalItemsSum = item.originalItems.reduce((sum, i) => sum + ((i.price || 0) * (i.quantity || 1)), 0);
         const matchedItemsSum = matchedInnerItems.reduce((sum, i) => sum + ((i.price || 0) * (i.quantity || 1)), 0);
-        
-        const proportionalAmount = totalItemsSum > 0 
-                                      ? (matchedItemsSum / totalItemsSum) * item.originalTotalAmount 
-                                      : 0;
+
+        const proportionalAmount = totalItemsSum > 0
+          ? (matchedItemsSum / totalItemsSum) * item.originalTotalAmount
+          : 0;
 
         matchedItem.product = matchedInnerItems.map(i => `${i.quantity || 1}x ${i.name}`).join(', ');
         const uniqueCategories = [...new Set(matchedInnerItems.map(i => i.category).filter(Boolean))];
@@ -76,31 +77,23 @@ const SalesReport = ({ globalDateRange, globalCustomStart, globalCustomEnd }) =>
     if (item.timestamp) {
       const now = new Date();
       const itemDate = item.timestamp;
-      
+
       const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
       const itemDay = new Date(itemDate.getFullYear(), itemDate.getMonth(), itemDate.getDate());
-      
-      const diffTime = today.getTime() - itemDay.getTime();
-      const diffDays = diffTime / (1000 * 60 * 60 * 24);
 
-      if (globalDateRange === 'Today') {
+      const diffTime = today.getTime() - itemDay.getTime();
+      const diffDays = Math.floor(diffTime / (1000 * 60 * 60 * 24));
+
+      if (reportFilter === 'Daily') {
         dateMatch = diffDays === 0;
-      } else if (globalDateRange === 'Last 7 Days') {
+      } else if (reportFilter === 'Weekly') {
         dateMatch = diffDays <= 7 && diffDays >= 0;
-      } else if (globalDateRange === 'Month to Date') {
-        dateMatch = itemDate.getFullYear() === now.getFullYear() && itemDate.getMonth() === now.getMonth();
-      } else if (globalDateRange === 'Last Quarter') {
-        dateMatch = diffDays <= 90 && diffDays >= 0;
-      } else if (globalDateRange === 'Custom') {
-        if (globalCustomStart && globalCustomEnd) {
-          const start = new Date(globalCustomStart);
-          start.setHours(0, 0, 0, 0);
-          const end = new Date(globalCustomEnd);
-          end.setHours(23, 59, 59, 999);
-          dateMatch = itemDate >= start && itemDate <= end;
-        }
-      } else {
+      } else if (reportFilter === 'Monthly') {
         dateMatch = diffDays <= 30 && diffDays >= 0;
+      } else if (reportFilter === 'Quarterly') {
+        dateMatch = diffDays <= 90 && diffDays >= 0;
+      } else if (reportFilter === 'Annually') {
+        dateMatch = diffDays <= 365 && diffDays >= 0;
       }
     }
 
@@ -111,7 +104,7 @@ const SalesReport = ({ globalDateRange, globalCustomStart, globalCustomEnd }) =>
   const averageTransaction = filteredData.length ? totalRevenue / filteredData.length : 0;
 
   const getStatusColor = (status) => {
-    switch(status) {
+    switch (status) {
       case 'Completed': return 'text-emerald-600 bg-emerald-50 border-emerald-200';
       case 'Pending': return 'text-amber-600 bg-amber-50 border-amber-200';
       case 'Refunded': return 'text-rose-600 bg-rose-50 border-rose-200';
@@ -139,16 +132,24 @@ const SalesReport = ({ globalDateRange, globalCustomStart, globalCustomEnd }) =>
 
   return (
     <div id="sales-report-content" className="flex flex-col gap-6 animate-in fade-in slide-in-from-bottom-4 duration-500 bg-zinc-50 pb-8">
-      
+
       {/* Filters and Actions */}
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 bg-white p-4 rounded-xl border border-zinc-200 shadow-sm">
         <div className="flex flex-wrap items-center gap-3">
-          <div className="flex items-center gap-2">
-             <span className="text-xs font-bold text-emerald-600 bg-emerald-50 px-2 py-1 rounded">Global Date Sync: {globalDateRange}</span>
-          </div>
-          
-          <select 
-            value={categoryFilter} 
+          <select
+            value={reportFilter}
+            onChange={(e) => setReportFilter(e.target.value)}
+            className="search-input !w-auto !bg-white border !border-zinc-200 font-medium text-zinc-700 hover:border-zinc-300 cursor-pointer"
+          >
+            <option value="Daily">Daily</option>
+            <option value="Weekly">Weekly</option>
+            <option value="Monthly">Monthly</option>
+            <option value="Quarterly">Quarterly</option>
+            <option value="Annually">Annually</option>
+          </select>
+
+          <select
+            value={categoryFilter}
             onChange={(e) => setCategoryFilter(e.target.value)}
             className="search-input !w-auto !bg-white border !border-zinc-200 font-medium text-zinc-700 hover:border-zinc-300 cursor-pointer"
           >
@@ -171,18 +172,18 @@ const SalesReport = ({ globalDateRange, globalCustomStart, globalCustomEnd }) =>
 
       {/* Summary Cards */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-          <div className="stat-card">
-            <p className="stat-card-title">Filtered Revenue</p>
-            <p className="stat-card-value">₱{totalRevenue.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}</p>
-          </div>
-          <div className="stat-card">
-            <p className="stat-card-title">Transaction Count</p>
-            <p className="stat-card-value">{filteredData.length}</p>
-          </div>
-          <div className="stat-card">
-            <p className="stat-card-title">Average Transaction</p>
-            <p className="stat-card-value">₱{averageTransaction.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}</p>
-          </div>
+        <div className="stat-card">
+          <p className="stat-card-title">Filtered Revenue</p>
+          <p className="stat-card-value">₱{totalRevenue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
+        </div>
+        <div className="stat-card">
+          <p className="stat-card-title">Transaction Count</p>
+          <p className="stat-card-value">{filteredData.length}</p>
+        </div>
+        <div className="stat-card">
+          <p className="stat-card-title">Average Transaction</p>
+          <p className="stat-card-value">₱{averageTransaction.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
+        </div>
       </div>
 
       {/* Detailed Data Table */}
@@ -211,7 +212,7 @@ const SalesReport = ({ globalDateRange, globalCustomStart, globalCustomEnd }) =>
                       <p className="text-[10px] text-zinc-400 uppercase tracking-wider truncate" title={row.category}>{row.category}</p>
                     </div>
                   </td>
-                  <td className="table-data-cell font-bold">₱{Number(row.amount).toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}</td>
+                  <td className="table-data-cell font-bold">₱{Number(row.amount).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
                   <td className="table-data-cell">
                     <span className={`px-2.5 py-1 rounded-full text-[10px] font-bold border ${getStatusColor(row.status)}`}>
                       {row.status}
@@ -219,7 +220,7 @@ const SalesReport = ({ globalDateRange, globalCustomStart, globalCustomEnd }) =>
                   </td>
                 </tr>
               ))}
-              
+
               {loading ? (
                 <tr>
                   <td colSpan="6" className="py-12 text-center text-zinc-400">
@@ -238,7 +239,7 @@ const SalesReport = ({ globalDateRange, globalCustomStart, globalCustomEnd }) =>
             </tbody>
           </table>
         </div>
-        
+
         {/* Pagination Placeholder */}
         <div className="px-6 py-4 border-t border-zinc-100 flex items-center justify-between text-xs text-zinc-500 bg-zinc-50/50">
           <span>Showing 1 to {filteredData.length} of {filteredData.length} entries</span>

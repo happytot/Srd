@@ -414,7 +414,7 @@ function App() {
         <header className="flex flex-col xl:flex-row justify-between items-start xl:items-center gap-4 mb-8">
           <h2 className="text-xl font-bold tracking-tight">{activeTab}</h2>
           <div className="flex flex-wrap items-center gap-4 w-full xl:w-auto">
-            {activeTab !== 'User Management' && activeTab !== 'Inventory Alerts' && (
+            {activeTab !== 'User Management' && activeTab !== 'Inventory Alerts' && activeTab !== 'Sales Reports' && (
               <GlobalDateFilter
                 globalDateRange={globalDateRange} setGlobalDateRange={setGlobalDateRange}
                 globalCustomStart={globalCustomStart} setGlobalCustomStart={setGlobalCustomStart}
