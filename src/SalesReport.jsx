@@ -114,7 +114,7 @@ const SalesReport = ({ globalDateRange, globalCustomStart, globalCustomEnd }) =>
 
   const getReportName = () => {
     let base = 'Sales Report';
-    switch(reportFilter) {
+    switch (reportFilter) {
       case 'Daily': base = 'Daily Sales Report'; break;
       case 'Weekly': base = 'Weekly Sales Report'; break;
       case 'Monthly': base = 'Monthly Sales Report'; break;
@@ -129,7 +129,7 @@ const SalesReport = ({ globalDateRange, globalCustomStart, globalCustomEnd }) =>
 
   const getFileNamePrefix = () => {
     let base = 'Sales_Report';
-    switch(reportFilter) {
+    switch (reportFilter) {
       case 'Daily': base = 'Daily_Sales_Report'; break;
       case 'Weekly': base = 'Weekly_Sales_Report'; break;
       case 'Monthly': base = 'Monthly_Sales_Report'; break;

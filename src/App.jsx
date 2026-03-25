@@ -39,10 +39,29 @@ const Overview = ({ globalDateRange, globalCustomStart, globalCustomEnd }) => {
   const [allOrders, setAllOrders] = useState([]);
 
   const trendDays = useMemo(() => {
+    const now = new Date();
+    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+
     if (globalDateRange === 'Today') return 1;
-    if (globalDateRange === 'Last 7 Days') return 7;
-    if (globalDateRange === 'Month to Date') return new Date().getDate();
-    if (globalDateRange === 'Last Quarter') return 90;
+
+    // New Logic for Weekly, Monthly, Quarterly, Annually
+    if (globalDateRange === 'Weekly') return 7;
+
+    if (globalDateRange === 'Monthly') {
+      return now.getDate(); // Days passed in current month
+    }
+
+    if (globalDateRange === 'Quarterly') {
+      const quarterStartMonth = Math.floor(now.getMonth() / 3) * 3;
+      const quarterStart = new Date(now.getFullYear(), quarterStartMonth, 1);
+      return Math.max(1, Math.ceil((today - quarterStart) / (1000 * 60 * 60 * 24)) + 1);
+    }
+
+    if (globalDateRange === 'Annually') {
+      const yearStart = new Date(now.getFullYear(), 0, 1);
+      return Math.max(1, Math.ceil((today - yearStart) / (1000 * 60 * 60 * 24)) + 1);
+    }
+
     if (globalDateRange === 'Custom') {
       if (globalCustomStart && globalCustomEnd) {
         const start = new Date(globalCustomStart);
@@ -51,7 +70,7 @@ const Overview = ({ globalDateRange, globalCustomStart, globalCustomEnd }) => {
       }
       return 30;
     }
-    return 30; // fallback
+    return 7; // fallback
   }, [globalDateRange, globalCustomStart, globalCustomEnd]);
 
   const [hoveredPoint, setHoveredPoint] = useState(null);
@@ -121,9 +140,10 @@ const Overview = ({ globalDateRange, globalCustomStart, globalCustomEnd }) => {
     allOrders.forEach(order => {
       if (!order.createdAt) return;
       const date = order.createdAt.toDate();
+      const orderDay = new Date(date.getFullYear(), date.getMonth(), date.getDate());
       const amt = Number(order.totalAmount) || 0;
 
-      const diffTime = today.getTime() - new Date(date.getFullYear(), date.getMonth(), date.getDate()).getTime();
+      const diffTime = today.getTime() - orderDay.getTime();
       const diffDays = Math.round(diffTime / (1000 * 60 * 60 * 24));
 
       let itemsCount = 0;
@@ -133,8 +153,10 @@ const Overview = ({ globalDateRange, globalCustomStart, globalCustomEnd }) => {
 
       if (diffDays >= 0 && diffDays < trendDays) {
         const idx = trendDays - 1 - diffDays;
-        trendData[idx].sales += amt;
-        trendData[idx].itemsSold += itemsCount;
+        if (trendData[idx]) {
+          trendData[idx].sales += amt;
+          trendData[idx].itemsSold += itemsCount;
+        }
       }
 
       if (date >= today) {
@@ -192,10 +214,16 @@ const Overview = ({ globalDateRange, globalCustomStart, globalCustomEnd }) => {
   const generateTrendPath = () => {
     const trend = stats.salesTrend || [];
     if (trend.length === 0) return { path: '', points: [], maxSales: 1 };
+    // Handle single day data point to avoid NaN in path
+    if (trend.length === 1) {
+      const maxSales = Math.max(trend[0].sales, 1);
+      const pt = { x: 200, y: 90 - ((trend[0].sales / maxSales) * 80) };
+      return { path: `M ${pt.x},${pt.y} L ${pt.x},${pt.y}`, points: [pt], maxSales };
+    }
 
     const maxSales = Math.max(...trend.map(t => t.sales), 1);
     const points = trend.map((val, i) => ({
-      x: (i / Math.max(1, trendDays - 1)) * 400,
+      x: (i / Math.max(1, trend.length - 1)) * 400,
       y: 90 - ((val.sales / maxSales) * 80)
     }));
 
@@ -224,7 +252,7 @@ const Overview = ({ globalDateRange, globalCustomStart, globalCustomEnd }) => {
         <div className="lg:col-span-2 content-card h-[350px]">
           <div className="flex justify-between items-start mb-6">
             <div>
-              <h3 className="font-bold text-sm mb-1">Sales Trend</h3>
+              <h3 className="font-bold text-sm mb-1">Sales Trend ({globalDateRange})</h3>
               <p className="text-[10px] text-zinc-400">Order velocity & timeline</p>
             </div>
             <div className="flex items-center gap-2">
@@ -323,8 +351,8 @@ function App() {
   const [user, setUser] = useState(null);
   const [isAuthLoading, setIsAuthLoading] = useState(true);
 
-  // Global Date State
-  const [globalDateRange, setGlobalDateRange] = useState('Last 7 Days');
+  // Global Date State initialized with 'Weekly'
+  const [globalDateRange, setGlobalDateRange] = useState('Weekly');
   const [globalCustomStart, setGlobalCustomStart] = useState('');
   const [globalCustomEnd, setGlobalCustomEnd] = useState('');
 
