@@ -26,13 +26,16 @@ const StatCard = ({ title, value, subtext, icon }) => (
 
 const Overview = ({ globalDateRange, globalCustomStart, globalCustomEnd }) => {
   const [stats, setStats] = useState({
-    todaySales: 0,
-    yesterdaySales: 0,
-    todayOrders: 0,
-    avgOrderValue: 0,
+    currentRevenue: 0,
+    previousRevenue: 0,
+    currentOrders: 0,
+    previousOrders: 0,
+    currentAvg: 0,
+    previousAvg: 0,
     topProduct: 'N/A',
     topProductSales: 0,
-    productTable: [],
+    bestSelling: [],
+    leastSelling: [],
     lowStock: [],
     salesTrend: []
   });
@@ -43,15 +46,13 @@ const Overview = ({ globalDateRange, globalCustomStart, globalCustomEnd }) => {
     const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
 
     if (globalDateRange === 'Today') return 1;
+    if (globalDateRange === 'Weekly' || globalDateRange === 'Last 7 Days') return 7;
 
-    // New Logic for Weekly, Monthly, Quarterly, Annually
-    if (globalDateRange === 'Weekly') return 7;
-
-    if (globalDateRange === 'Monthly') {
+    if (globalDateRange === 'Monthly' || globalDateRange === 'Month to Date') {
       return now.getDate(); // Days passed in current month
     }
 
-    if (globalDateRange === 'Quarterly') {
+    if (globalDateRange === 'Quarterly' || globalDateRange === 'Last Quarter') {
       const quarterStartMonth = Math.floor(now.getMonth() / 3) * 3;
       const quarterStart = new Date(now.getFullYear(), quarterStartMonth, 1);
       return Math.max(1, Math.ceil((today - quarterStart) / (1000 * 60 * 60 * 24)) + 1);
@@ -118,12 +119,75 @@ const Overview = ({ globalDateRange, globalCustomStart, globalCustomEnd }) => {
 
     const now = new Date();
     const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-    const yesterday = new Date(today);
-    yesterday.setDate(yesterday.getDate() - 1);
+    
+    let startCurrent = new Date(today);
+    let endCurrent = new Date(today);
+    endCurrent.setHours(23, 59, 59, 999);
+    
+    let startPrev = new Date(today);
+    let endPrev = new Date(today);
 
-    let todaySales = 0;
-    let yesterdaySales = 0;
-    let todayOrders = 0;
+    if (globalDateRange === 'Today') {
+      startCurrent.setHours(0,0,0,0);
+      
+      startPrev.setDate(startPrev.getDate() - 1);
+      startPrev.setHours(0,0,0,0);
+      endPrev = new Date(startPrev);
+      endPrev.setHours(23,59,59,999);
+    } else if (globalDateRange === 'Last 7 Days' || globalDateRange === 'Weekly') {
+      startCurrent.setDate(startCurrent.getDate() - 6);
+      startCurrent.setHours(0,0,0,0);
+      
+      startPrev.setDate(startCurrent.getDate() - 7);
+      endPrev.setDate(startCurrent.getDate() - 1);
+      endPrev.setHours(23,59,59,999);
+    } else if (globalDateRange === 'Month to Date' || globalDateRange === 'Monthly') {
+      startCurrent = new Date(now.getFullYear(), now.getMonth(), 1);
+      startCurrent.setHours(0,0,0,0);
+      
+      startPrev = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+      endPrev = new Date(startPrev);
+      endPrev.setDate(endPrev.getDate() + (now.getDate() - 1));
+      endPrev.setHours(23,59,59,999);
+    } else if (globalDateRange === 'Last Quarter' || globalDateRange === 'Quarterly') {
+      startCurrent.setDate(startCurrent.getDate() - 89);
+      startCurrent.setHours(0,0,0,0);
+      
+      startPrev.setDate(startCurrent.getDate() - 90);
+      endPrev.setDate(startCurrent.getDate() - 1);
+      endPrev.setHours(23,59,59,999);
+    } else if (globalDateRange === 'Annually') {
+      startCurrent = new Date(now.getFullYear(), 0, 1);
+      startCurrent.setHours(0,0,0,0);
+      
+      startPrev = new Date(now.getFullYear() - 1, 0, 1);
+      endPrev = new Date(now.getFullYear() - 1, now.getMonth(), now.getDate());
+      endPrev.setHours(23,59,59,999);
+    } else if (globalDateRange === 'Custom') {
+      if (globalCustomStart && globalCustomEnd) {
+        startCurrent = new Date(globalCustomStart);
+        startCurrent.setHours(0,0,0,0);
+        endCurrent = new Date(globalCustomEnd);
+        endCurrent.setHours(23,59,59,999);
+        
+        const diffTime = endCurrent.getTime() - startCurrent.getTime();
+        startPrev = new Date(startCurrent.getTime() - diffTime - 86400000);
+        endPrev = new Date(startCurrent.getTime() - 86400000);
+        endPrev.setHours(23,59,59,999);
+      }
+    } else {
+      startCurrent.setDate(startCurrent.getDate() - 29);
+      startCurrent.setHours(0,0,0,0);
+      
+      startPrev.setDate(startCurrent.getDate() - 30);
+      endPrev.setDate(startCurrent.getDate() - 1);
+      endPrev.setHours(23,59,59,999);
+    }
+
+    let currentRevenue = 0;
+    let previousRevenue = 0;
+    let currentOrders = 0;
+    let previousOrders = 0;
     let productCounts = {};
     const trendData = [];
 
@@ -159,27 +223,30 @@ const Overview = ({ globalDateRange, globalCustomStart, globalCustomEnd }) => {
         }
       }
 
-      if (date >= today) {
-        todaySales += amt;
-        todayOrders++;
-      } else if (date >= yesterday && date < today) {
-        yesterdaySales += amt;
-      }
-
-      if (order.items) {
-        order.items.forEach(item => {
-          if (!productCounts[item.name]) {
-            productCounts[item.name] = { sales: 0, revenue: 0 };
-          }
-          const itemQty = Number(item.quantity) || 1;
-          const itemPrice = Number(item.price) || 0;
-          productCounts[item.name].sales += itemQty;
-          productCounts[item.name].revenue += (itemPrice * itemQty);
-        });
+      if (date >= startCurrent && date <= endCurrent) {
+        currentRevenue += amt;
+        currentOrders++;
+        
+        if (order.items) {
+          order.items.forEach(item => {
+            if (!productCounts[item.name]) {
+              productCounts[item.name] = { sales: 0, revenue: 0 };
+            }
+            const itemQty = Number(item.quantity) || 1;
+            const itemPrice = Number(item.price) || 0;
+            productCounts[item.name].sales += itemQty;
+            productCounts[item.name].revenue += (itemPrice * itemQty);
+          });
+        }
+      } else if (date >= startPrev && date <= endPrev) {
+        previousRevenue += amt;
+        previousOrders++;
       }
     });
 
-    const avgOrderValue = todayOrders > 0 ? (todaySales / todayOrders) : 0;
+    const currentAvg = currentOrders > 0 ? (currentRevenue / currentOrders) : 0;
+    const previousAvg = previousOrders > 0 ? (previousRevenue / previousOrders) : 0;
+    
     const sortedProducts = Object.entries(productCounts)
       .map(([name, data]) => ({ name, ...data }))
       .sort((a, b) => b.sales - a.sales);
@@ -188,16 +255,19 @@ const Overview = ({ globalDateRange, globalCustomStart, globalCustomEnd }) => {
 
     setStats(prev => ({
       ...prev,
-      todaySales,
-      yesterdaySales,
-      todayOrders,
-      avgOrderValue,
+      currentRevenue,
+      previousRevenue,
+      currentOrders,
+      previousOrders,
+      currentAvg,
+      previousAvg,
       topProduct: topProduct ? topProduct.name : 'N/A',
       topProductSales: topProduct ? topProduct.sales : 0,
-      productTable: sortedProducts.slice(0, 5),
+      bestSelling: sortedProducts.slice(0, 5),
+      leastSelling: sortedProducts.slice(-5).reverse(), // Bottom 5
       salesTrend: trendData
     }));
-  }, [allOrders, trendDays, loading]);
+  }, [allOrders, trendDays, loading, globalDateRange, globalCustomStart, globalCustomEnd]);
 
   if (loading) {
     return (
@@ -208,13 +278,12 @@ const Overview = ({ globalDateRange, globalCustomStart, globalCustomEnd }) => {
     );
   }
 
-  const salesDiff = stats.yesterdaySales > 0 ? ((stats.todaySales - stats.yesterdaySales) / stats.yesterdaySales) * 100 : 0;
-  const salesDiffText = stats.yesterdaySales === 0 ? "No sales yesterday" : `${salesDiff > 0 ? '+' : ''}${salesDiff.toFixed(1)}% vs yesterday`;
+  const revenueVariance = stats.previousRevenue === 0 ? (stats.currentRevenue > 0 ? 100 : 0) : ((stats.currentRevenue - stats.previousRevenue) / stats.previousRevenue) * 100;
+  const revenueDiffText = stats.previousRevenue === 0 ? "No prior data" : `${revenueVariance > 0 ? '+' : ''}${revenueVariance.toFixed(1)}% vs prior`;
 
   const generateTrendPath = () => {
     const trend = stats.salesTrend || [];
     if (trend.length === 0) return { path: '', points: [], maxSales: 1 };
-    // Handle single day data point to avoid NaN in path
     if (trend.length === 1) {
       const maxSales = Math.max(trend[0].sales, 1);
       const pt = { x: 200, y: 90 - ((trend[0].sales / maxSales) * 80) };
@@ -242,10 +311,10 @@ const Overview = ({ globalDateRange, globalCustomStart, globalCustomEnd }) => {
   return (
     <>
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
-        <StatCard title="Today's Sales" value={`₱${stats.todaySales.toLocaleString(undefined, { minimumFractionDigits: 2 })}`} subtext={salesDiffText} icon="" />
-        <StatCard title="Total Orders" value={stats.todayOrders} subtext="Orders today" icon="" />
-        <StatCard title="Avg. Order Value" value={`₱${stats.avgOrderValue.toLocaleString(undefined, { minimumFractionDigits: 2 })}`} subtext="Average today" icon="" />
-        <StatCard title="Top Product" value={stats.topProduct} subtext={`${stats.topProductSales} units all-time`} icon="" />
+        <StatCard title={`${globalDateRange === 'Today' ? "Today's" : "Period"} Revenue`} value={`₱${stats.currentRevenue.toLocaleString(undefined, { minimumFractionDigits: 2 })}`} subtext={revenueDiffText} icon="" />
+        <StatCard title="Total Orders" value={stats.currentOrders} subtext="Orders in period" icon="" />
+        <StatCard title="Avg. Order Value" value={`₱${stats.currentAvg.toLocaleString(undefined, { minimumFractionDigits: 2 })}`} subtext="Average in period" icon="" />
+        <StatCard title="Top Product" value={stats.topProduct} subtext={`${stats.topProductSales} units sold`} icon="" />
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
@@ -311,36 +380,58 @@ const Overview = ({ globalDateRange, globalCustomStart, globalCustomEnd }) => {
         </div>
       </div>
 
-      <section className="table-container">
-        <table className="w-full border-collapse">
-          <thead>
-            <tr>
-              <th className="table-head-cell">Top Products (All-Time)</th>
-              <th className="table-head-cell">Units Sold</th>
-              <th className="table-head-cell">Estimated Revenue</th>
-              <th className="table-head-cell">Status</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-zinc-50">
-            {stats.productTable.map((p) => (
-              <tr key={p.name} className="table-row">
-                <td className="table-data-cell font-bold truncate max-w-[200px]">{p.name}</td>
-                <td className="table-data-cell">{p.sales}</td>
-                <td className="table-data-cell font-bold">₱{p.revenue.toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
-                <td className="table-data-cell">
-                  <span className="text-emerald-600 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider">
-                    Available
-                  </span>
-                </td>
+      <section className="grid grid-cols-1 lg:grid-cols-2 gap-6 pb-6">
+        <div className="table-container mt-0">
+          <table className="w-full border-collapse">
+            <thead>
+              <tr>
+                <th className="table-head-cell">Best-Selling Items</th>
+                <th className="table-head-cell text-center">Units</th>
+                <th className="table-head-cell text-right">Revenue</th>
               </tr>
-            ))}
-            {stats.productTable.length === 0 && (
-              <tr className="table-row">
-                <td colSpan="4" className="table-data-cell text-center text-zinc-400 py-8">No transaction data available yet.</td>
+            </thead>
+            <tbody className="divide-y divide-zinc-50">
+              {stats.bestSelling.map((p) => (
+                <tr key={p.name} className="table-row">
+                  <td className="table-data-cell font-bold truncate max-w-[150px]">{p.name}</td>
+                  <td className="table-data-cell text-center text-emerald-600 font-bold">{p.sales}</td>
+                  <td className="table-data-cell text-right font-bold">₱{p.revenue.toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
+                </tr>
+              ))}
+              {stats.bestSelling.length === 0 && (
+                <tr className="table-row">
+                  <td colSpan="3" className="table-data-cell text-center text-zinc-400 py-8">No data available.</td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+
+        <div className="table-container mt-0">
+          <table className="w-full border-collapse">
+            <thead>
+              <tr>
+                <th className="table-head-cell">Least-Selling Items</th>
+                <th className="table-head-cell text-center">Units</th>
+                <th className="table-head-cell text-right">Revenue</th>
               </tr>
-            )}
-          </tbody>
-        </table>
+            </thead>
+            <tbody className="divide-y divide-zinc-50">
+              {stats.leastSelling.map((p) => (
+                <tr key={p.name} className="table-row">
+                  <td className="table-data-cell font-bold truncate max-w-[150px]">{p.name}</td>
+                  <td className="table-data-cell text-center text-rose-500 font-bold">{p.sales}</td>
+                  <td className="table-data-cell text-right font-bold">₱{p.revenue.toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
+                </tr>
+              ))}
+              {stats.leastSelling.length === 0 && (
+                <tr className="table-row">
+                  <td colSpan="3" className="table-data-cell text-center text-zinc-400 py-8">No data available.</td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
       </section>
     </>
   );
@@ -442,7 +533,7 @@ function App() {
         <header className="flex flex-col xl:flex-row justify-between items-start xl:items-center gap-4 mb-8">
           <h2 className="text-xl font-bold tracking-tight">{activeTab}</h2>
           <div className="flex flex-wrap items-center gap-4 w-full xl:w-auto">
-            {activeTab !== 'User Management' && activeTab !== 'Inventory Alerts' && activeTab !== 'Sales Reports' && (
+            {activeTab !== 'User Management' && activeTab !== 'Inventory Alerts' && (
               <GlobalDateFilter
                 globalDateRange={globalDateRange} setGlobalDateRange={setGlobalDateRange}
                 globalCustomStart={globalCustomStart} setGlobalCustomStart={setGlobalCustomStart}

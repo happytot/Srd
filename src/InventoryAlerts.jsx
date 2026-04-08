@@ -141,6 +141,13 @@ const InventoryAlerts = () => {
   const criticalCount = inventoryData.filter(i => i.status === 'Critical').length;
   const reorderCount = inventoryData.filter(i => i.isPastReorderDate).length;
 
+  const mostUsedItems = useMemo(() => {
+    return Object.entries(itemVelocity)
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 3)
+      .map(([name, rate]) => ({ name, rate }));
+  }, [itemVelocity]);
+
   const getStatusColor = (status) => {
     switch (status) {
       case 'Critical': return 'text-rose-600 bg-rose-50 border-rose-200';
@@ -218,6 +225,29 @@ const InventoryAlerts = () => {
           </div>
         </div>
       </div>
+
+      {mostUsedItems.length > 0 && (
+        <div className="flex flex-col gap-3">
+          <h3 className="font-bold text-sm text-zinc-900 mt-2">Most Used Items (30-Day Velocity)</h3>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            {mostUsedItems.map((item, idx) => (
+              <div key={idx} className="bg-white border border-emerald-200 rounded-xl p-4 flex justify-between items-center shadow-sm">
+                <div className="flex items-center gap-3">
+                  <div className="w-8 h-8 rounded-full bg-emerald-100 flex items-center justify-center text-emerald-700 font-bold text-xs shrink-0">#{idx + 1}</div>
+                  <div>
+                    <p className="font-bold text-sm text-zinc-900 truncate max-w-[120px]" title={item.name}>{item.name}</p>
+                    <p className="text-[10px] text-emerald-600 font-bold uppercase tracking-wider mt-0.5">Fast Moving</p>
+                  </div>
+                </div>
+                <div className="text-right">
+                  <p className="font-black text-emerald-700 text-lg leading-none">{item.rate}</p>
+                  <p className="text-[9px] text-zinc-400 font-medium uppercase tracking-wider mt-1">Units / Day</p>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
         {filteredData.map((item) => (

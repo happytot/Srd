@@ -1,13 +1,49 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { collection, query, getDocs, orderBy } from 'firebase/firestore';
 import { db } from './firebase';
 import ExportEngine from './utils/ExportEngine';
 
 const SalesReport = ({ globalDateRange, globalCustomStart, globalCustomEnd }) => {
   const [categoryFilter, setCategoryFilter] = useState('All Categories');
-  const [reportFilter, setReportFilter] = useState('Daily');
+  const [paymentFilter, setPaymentFilter] = useState('All Payments');
   const [reportData, setReportData] = useState([]);
   const [loading, setLoading] = useState(true);
+
+  const dateRangeBounds = useMemo(() => {
+    const now = new Date();
+    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    
+    let startCurrent = new Date(today);
+    let endCurrent = new Date(today);
+    endCurrent.setHours(23, 59, 59, 999);
+
+    if (globalDateRange === 'Today') {
+      startCurrent.setHours(0,0,0,0);
+    } else if (globalDateRange === 'Last 7 Days' || globalDateRange === 'Weekly') {
+      startCurrent.setDate(startCurrent.getDate() - 6);
+      startCurrent.setHours(0,0,0,0);
+    } else if (globalDateRange === 'Month to Date' || globalDateRange === 'Monthly') {
+      startCurrent = new Date(now.getFullYear(), now.getMonth(), 1);
+      startCurrent.setHours(0,0,0,0);
+    } else if (globalDateRange === 'Last Quarter' || globalDateRange === 'Quarterly') {
+      startCurrent.setDate(startCurrent.getDate() - 89);
+      startCurrent.setHours(0,0,0,0);
+    } else if (globalDateRange === 'Annually') {
+      startCurrent = new Date(now.getFullYear(), 0, 1);
+      startCurrent.setHours(0,0,0,0);
+    } else if (globalDateRange === 'Custom') {
+      if (globalCustomStart && globalCustomEnd) {
+        startCurrent = new Date(globalCustomStart);
+        startCurrent.setHours(0,0,0,0);
+        endCurrent = new Date(globalCustomEnd);
+        endCurrent.setHours(23, 59, 59, 999);
+      }
+    } else {
+      startCurrent.setDate(startCurrent.getDate() - 29);
+      startCurrent.setHours(0,0,0,0);
+    }
+    return { startCurrent, endCurrent };
+  }, [globalDateRange, globalCustomStart, globalCustomEnd]);
 
   useEffect(() => {
     const fetchOrders = async () => {
@@ -30,7 +66,9 @@ const SalesReport = ({ globalDateRange, globalCustomStart, globalCustomEnd }) =>
             originalTotalAmount: order.totalAmount || 0,
             originalItems: order.items || [],
             status: 'Completed',
-            customer: order.cashierName || 'Guest'
+            customer: order.cashierName || 'Guest',
+            paymentMethod: order.paymentMethod || 'Cash',
+            gcashRefNumber: order.gcashRefNumber || ''
           };
         });
         setReportData(data);
@@ -64,6 +102,9 @@ const SalesReport = ({ globalDateRange, globalCustomStart, globalCustomEnd }) =>
         const uniqueCategories = [...new Set(matchedInnerItems.map(i => i.category).filter(Boolean))];
         matchedItem.category = uniqueCategories.length === 1 ? uniqueCategories[0] : (uniqueCategories.length > 1 ? 'Multiple' : 'Unknown');
         matchedItem.amount = proportionalAmount;
+        // Maintain payment method fields in proportional splits
+        matchedItem.paymentMethod = item.paymentMethod;
+        matchedItem.gcashRefNumber = item.gcashRefNumber;
       } else {
         matchedItem.isMatch = false;
       }
@@ -75,29 +116,18 @@ const SalesReport = ({ globalDateRange, globalCustomStart, globalCustomEnd }) =>
 
     let dateMatch = true;
     if (item.timestamp) {
-      const now = new Date();
       const itemDate = item.timestamp;
-
-      const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-      const itemDay = new Date(itemDate.getFullYear(), itemDate.getMonth(), itemDate.getDate());
-
-      const diffTime = today.getTime() - itemDay.getTime();
-      const diffDays = Math.floor(diffTime / (1000 * 60 * 60 * 24));
-
-      if (reportFilter === 'Daily') {
-        dateMatch = diffDays === 0;
-      } else if (reportFilter === 'Weekly') {
-        dateMatch = diffDays <= 7 && diffDays >= 0;
-      } else if (reportFilter === 'Monthly') {
-        dateMatch = diffDays <= 30 && diffDays >= 0;
-      } else if (reportFilter === 'Quarterly') {
-        dateMatch = diffDays <= 90 && diffDays >= 0;
-      } else if (reportFilter === 'Annually') {
-        dateMatch = diffDays <= 365 && diffDays >= 0;
-      }
+      dateMatch = itemDate >= dateRangeBounds.startCurrent && itemDate <= dateRangeBounds.endCurrent;
+    }
+    
+    let paymentMatch = true;
+    if (paymentFilter === 'Cash') {
+      paymentMatch = item.paymentMethod === 'Cash' || !item.paymentMethod;
+    } else if (paymentFilter === 'Cashless') {
+      paymentMatch = item.paymentMethod !== 'Cash' && item.paymentMethod !== undefined;
     }
 
-    return dateMatch;
+    return dateMatch && paymentMatch;
   });
 
   const totalRevenue = filteredData.reduce((sum, item) => sum + item.amount, 0);
@@ -113,14 +143,7 @@ const SalesReport = ({ globalDateRange, globalCustomStart, globalCustomEnd }) =>
   };
 
   const getReportName = () => {
-    let base = 'Sales Report';
-    switch (reportFilter) {
-      case 'Daily': base = 'Daily Sales Report'; break;
-      case 'Weekly': base = 'Weekly Sales Report'; break;
-      case 'Monthly': base = 'Monthly Sales Report'; break;
-      case 'Quarterly': base = 'Quarterly Sales Report'; break;
-      case 'Annually': base = 'Annual Sales Report'; break;
-    }
+    let base = `${globalDateRange} Sales Report`;
     if (categoryFilter !== 'All Categories') {
       return `${base} for ${categoryFilter}`;
     }
@@ -128,14 +151,7 @@ const SalesReport = ({ globalDateRange, globalCustomStart, globalCustomEnd }) =>
   };
 
   const getFileNamePrefix = () => {
-    let base = 'Sales_Report';
-    switch (reportFilter) {
-      case 'Daily': base = 'Daily_Sales_Report'; break;
-      case 'Weekly': base = 'Weekly_Sales_Report'; break;
-      case 'Monthly': base = 'Monthly_Sales_Report'; break;
-      case 'Quarterly': base = 'Quarterly_Sales_Report'; break;
-      case 'Annually': base = 'Annual_Sales_Report'; break;
-    }
+    let base = `${globalDateRange.replace(/\s+/g, '_')}_Sales_Report`;
     if (categoryFilter !== 'All Categories') {
       return `${base}_${categoryFilter.replace(/\s+/g, '_')}`;
     }
@@ -150,6 +166,7 @@ const SalesReport = ({ globalDateRange, globalCustomStart, globalCustomEnd }) =>
       'Items': row.product,
       'Category': row.category,
       'Amount': Number(row.amount), // Preserve Number format
+      'Payment Method': row.paymentMethod + (row.gcashRefNumber ? ` (Ref: ${row.gcashRefNumber})` : ''),
       'Status': row.status
     }));
   };
@@ -172,18 +189,20 @@ const SalesReport = ({ globalDateRange, globalCustomStart, globalCustomEnd }) =>
       {/* Filters and Actions */}
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 bg-white p-4 rounded-xl border border-zinc-200 shadow-sm">
         <div className="flex flex-wrap items-center gap-3">
+          <div className="flex items-center gap-2">
+             <span className="text-xs font-bold text-emerald-600 bg-emerald-50 px-2 py-1 rounded">Global Date Sync: {globalDateRange}</span>
+          </div>
+
           <select
-            value={reportFilter}
-            onChange={(e) => setReportFilter(e.target.value)}
+            value={paymentFilter}
+            onChange={(e) => setPaymentFilter(e.target.value)}
             className="search-input !w-auto !bg-white border !border-zinc-200 font-medium text-zinc-700 hover:border-zinc-300 cursor-pointer"
           >
-            <option value="Daily">Daily</option>
-            <option value="Weekly">Weekly</option>
-            <option value="Monthly">Monthly</option>
-            <option value="Quarterly">Quarterly</option>
-            <option value="Annually">Annually</option>
+            <option>All Payments</option>
+            <option>Cash</option>
+            <option>Cashless</option>
           </select>
-
+          
           <select
             value={categoryFilter}
             onChange={(e) => setCategoryFilter(e.target.value)}
@@ -207,7 +226,7 @@ const SalesReport = ({ globalDateRange, globalCustomStart, globalCustomEnd }) =>
       </div>
 
       {/* Summary Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
         <div className="stat-card">
           <p className="stat-card-title">Filtered Revenue</p>
           <p className="stat-card-value">₱{totalRevenue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
@@ -233,6 +252,7 @@ const SalesReport = ({ globalDateRange, globalCustomStart, globalCustomEnd }) =>
                 <th className="table-head-cell">Cashier</th>
                 <th className="table-head-cell">Items</th>
                 <th className="table-head-cell">Amount</th>
+                <th className="table-head-cell">Payment Method</th>
                 <th className="table-head-cell">Status</th>
               </tr>
             </thead>
@@ -249,6 +269,12 @@ const SalesReport = ({ globalDateRange, globalCustomStart, globalCustomEnd }) =>
                     </div>
                   </td>
                   <td className="table-data-cell font-bold">₱{Number(row.amount).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                  <td className="table-data-cell">
+                    <div className="flex flex-col">
+                      <span className="font-bold text-[11px] uppercase tracking-wider">{row.paymentMethod}</span>
+                      {row.gcashRefNumber && <span className="text-[9px] text-zinc-400 mt-0.5">REF: {row.gcashRefNumber}</span>}
+                    </div>
+                  </td>
                   <td className="table-data-cell">
                     <span className={`px-2.5 py-1 rounded-full text-[10px] font-bold border ${getStatusColor(row.status)}`}>
                       {row.status}
