@@ -1,14 +1,23 @@
 import { useState, useEffect, useMemo } from 'react'
 import { auth, db } from './firebase'
 import { doc, getDoc, collection, query, where, orderBy, onSnapshot } from 'firebase/firestore'
-import { onAuthStateChanged, signOut } from 'firebase/auth'
+import { onAuthStateChanged } from 'firebase/auth'
 import LoginPage from './LoginPage'
 import SalesReport from './SalesReport'
 import InventoryAlerts from './InventoryAlerts'
 import UserManagement from './UserManagement'
 import SalesAnalytics from './SalesAnalytics'
 import SalesForecasting from './SalesForecasting'
+import ActivityLogs from './ActivityLogs'
 import GlobalDateFilter from './components/GlobalDateFilter'
+import AppSidebar from './components/AppSidebar'
+import {
+  endUserSession,
+  heartbeatSession,
+  logUserAction,
+  startUserSession
+} from './utils/userActivityLogger'
+import { isAdminRole } from './utils/roles'
 
 const StatCard = ({ title, value, subtext, icon }) => (
   <div className="stat-card">
@@ -471,6 +480,35 @@ function App() {
     return () => unsubscribe();
   }, []);
 
+  useEffect(() => {
+    if (!user?.uid) return undefined;
+
+    let sessionId = '';
+    let beat = null;
+    const begin = async () => {
+      try {
+        sessionId = await startUserSession(user);
+        await logUserAction(user, 'LOGIN', { subsystem: 'SRD' });
+        beat = setInterval(() => {
+          heartbeatSession(sessionId).catch((err) => console.error('Heartbeat failed:', err));
+        }, 45000);
+      } catch (err) {
+        console.error('Session start failed:', err);
+      }
+    };
+
+    begin();
+
+    return () => {
+      if (beat) clearInterval(beat);
+      if (sessionId) {
+        endUserSession(sessionId).catch((err) => console.error('End session failed:', err));
+        logUserAction(user, 'LOGOUT', { subsystem: 'SRD' }).catch((err) => console.error('Logout log failed:', err));
+      }
+    };
+  }, [user]);
+
+
   if (isAuthLoading) {
     return <div className="min-h-screen bg-zinc-50 flex flex-col justify-center items-center font-sans"><div className="w-12 h-12 bg-black rounded-xl flex items-center justify-center text-white font-bold text-xl shadow-lg animate-pulse">C</div><p className="mt-4 text-sm text-zinc-500 font-medium">Loading Dashboard...</p></div>;
   }
@@ -486,48 +524,15 @@ function App() {
     { name: 'Sales Forecasting', icon: '' },
     { name: 'Sales Reports', icon: '' },
     { name: 'Inventory Alerts', icon: '' },
-    ...(user.role === 'Admin' ? [{ name: 'User Management', icon: '' }] : [])
+    ...(isAdminRole(user.role) ? [
+      { name: 'User Management', icon: '' },
+      { name: 'Activity Logs', icon: '' }
+    ] : [])
   ];
 
   return (
     <div className="dashboard-container">
-      <aside className="sidebar">
-        <div className="flex items-center gap-3 mb-10">
-          <div className="w-8 h-8 bg-black rounded-lg flex items-center justify-center text-white font-bold text-sm">C</div>
-          <div>
-            <h1 className="text-sm font-bold leading-none">Coffee & Tea</h1>
-            <p className="text-[10px] text-zinc-400 mt-1">Sales Dashboard</p>
-          </div>
-        </div>
-
-        <nav className="space-y-1 flex-1">
-          {navItems.map((item) => (
-            <div
-              key={item.name}
-              onClick={() => setActiveTab(item.name)}
-              className={`nav-item ${activeTab === item.name ? 'nav-item-active' : 'nav-item-inactive'}`}
-            >
-              <span>{item.icon} {item.name}</span>
-            </div>
-          ))}
-        </nav>
-
-        <div className="border-t border-zinc-100 pt-4 flex items-center gap-3">
-          <div className="w-8 h-8 rounded-full bg-zinc-200 overflow-hidden shrink-0">
-            <img src={user.avatar || `https://api.dicebear.com/7.x/avataaars/svg?seed=${user.name || 'User'}`} alt="avatar" />
-          </div>
-          <div className="overflow-hidden flex-1">
-            <p className="text-xs font-bold truncate">{user.name}</p>
-            <span className={user.role === 'Admin' ? 'badge-admin' : 'text-[10px] font-bold uppercase tracking-wider text-violet-700 bg-violet-50 px-2 py-0.5 rounded-full'}>{user.role}</span>
-          </div>
-          <button
-            onClick={() => signOut(auth)}
-            className="text-[10px] font-bold text-zinc-400 hover:text-red-500 transition-colors uppercase"
-          >
-            Logout
-          </button>
-        </div>
-      </aside>
+      <AppSidebar user={user} navItems={navItems} activeTab={activeTab} setActiveTab={setActiveTab} />
 
       <main className="main-content">
         <header className="flex flex-col xl:flex-row justify-between items-start xl:items-center gap-4 mb-8">
@@ -544,16 +549,24 @@ function App() {
           </div>
         </header>
 
+
         {activeTab === 'Sales Analytics' ? (
           <SalesAnalytics globalDateRange={globalDateRange} globalCustomStart={globalCustomStart} globalCustomEnd={globalCustomEnd} />
         ) : activeTab === 'Sales Forecasting' ? (
           <SalesForecasting globalDateRange={globalDateRange} globalCustomStart={globalCustomStart} globalCustomEnd={globalCustomEnd} />
         ) : activeTab === 'Sales Reports' ? (
-          <SalesReport globalDateRange={globalDateRange} globalCustomStart={globalCustomStart} globalCustomEnd={globalCustomEnd} />
+          <SalesReport
+            globalDateRange={globalDateRange}
+            globalCustomStart={globalCustomStart}
+            globalCustomEnd={globalCustomEnd}
+            currentUser={user}
+          />
         ) : activeTab === 'Inventory Alerts' ? (
           <InventoryAlerts />
-        ) : activeTab === 'User Management' && user.role === 'Admin' ? (
+        ) : activeTab === 'User Management' && isAdminRole(user.role) ? (
           <UserManagement currentUser={user} />
+        ) : activeTab === 'Activity Logs' && isAdminRole(user.role) ? (
+          <ActivityLogs currentUser={user} />
         ) : (
           <Overview globalDateRange={globalDateRange} globalCustomStart={globalCustomStart} globalCustomEnd={globalCustomEnd} />
         )}

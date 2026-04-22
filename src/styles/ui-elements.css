@@ -10,3 +10,30 @@
 .stock-item {
   @apply flex justify-between items-center p-3 border border-zinc-100 rounded-lg text-xs hover:bg-zinc-50 transition-all;
 }
+
+/* Expense fields: explicit borders (avoid .search-input border-none hiding edges) */
+.expense-form-input {
+  border: 2px solid #d4d4d8;
+  border-radius: 0.5rem;
+  background: #fff;
+  padding: 0.5rem 0.75rem;
+  font-size: 0.875rem;
+  line-height: 1.25rem;
+  color: #18181b;
+  outline: none;
+  box-shadow: 0 1px 2px rgb(0 0 0 / 0.06);
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.expense-form-input::placeholder {
+  color: #a1a1aa;
+}
+
+.expense-form-input:hover {
+  border-color: #a1a1aa;
+}
+
+.expense-form-input:focus {
+  border-color: #18181b;
+  box-shadow: 0 0 0 3px rgb(24 24 27 / 0.12);
+}

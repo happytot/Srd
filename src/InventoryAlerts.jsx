@@ -140,6 +140,15 @@ const InventoryAlerts = () => {
 
   const criticalCount = inventoryData.filter(i => i.status === 'Critical').length;
   const reorderCount = inventoryData.filter(i => i.isPastReorderDate).length;
+  const toBuyList = useMemo(() => {
+    return inventoryData
+      .filter((item) => item.status === 'Critical' || item.isPastReorderDate)
+      .sort((a, b) => {
+        if (a.status === 'Critical' && b.status !== 'Critical') return -1;
+        if (a.status !== 'Critical' && b.status === 'Critical') return 1;
+        return a.daysUntilReorder - b.daysUntilReorder;
+      });
+  }, [inventoryData]);
 
   const mostUsedItems = useMemo(() => {
     return Object.entries(itemVelocity)
@@ -154,11 +163,6 @@ const InventoryAlerts = () => {
       case 'Low': return 'text-amber-600 bg-amber-50 border-amber-200';
       default: return 'text-zinc-600 bg-zinc-50 border-zinc-200';
     }
-  };
-
-  const getStockPercentage = (stock, threshold) => {
-    const pct = (stock / (Math.max(threshold, 1) * 1.5)) * 100;
-    return Math.min(Math.max(pct, 5), 100);
   };
 
   const handleUpdateForecast = async (id) => {
@@ -249,102 +253,153 @@ const InventoryAlerts = () => {
         </div>
       )}
 
-      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
-        {filteredData.map((item) => (
-          <div key={item.id} className={`bg-white border text-sm rounded-xl p-5 shadow-sm hover:shadow-md transition-all flex flex-col ${item.isPastReorderDate && viewMode === 'Forecasting' ? 'border-violet-300 ring-2 ring-violet-50' : 'border-zinc-200'}`}>
-
-            <div className="flex justify-between items-start mb-4">
-              <div>
-                <h3 className="font-bold text-lg text-zinc-900 leading-tight">{item.item}</h3>
-                <p className="text-xs text-zinc-400 font-medium uppercase tracking-wider mt-1">{item.category}</p>
-              </div>
-              <span className={`px-2.5 py-1 rounded-full text-[10px] font-bold border ${viewMode === 'Forecasting' && item.isPastReorderDate ? 'text-violet-600 bg-violet-50 border-violet-200' : getStatusColor(item.status)}`}>
-                {viewMode === 'Forecasting' && item.isPastReorderDate ? 'REORDER NOW' : item.status.toUpperCase()}
-              </span>
-            </div>
-
-            {viewMode === 'Alerts' ? (
-              <div className="space-y-3 mb-6 flex-1">
-                <div>
-                  <div className="flex justify-between text-xs mb-1">
-                    <span className="text-zinc-500">Current Stock</span>
-                    <span className="font-bold">{item.stock} <span className="text-zinc-400 font-normal">/ {item.threshold} min</span></span>
-                  </div>
-                  <div className="w-full bg-zinc-100 rounded-full h-1.5 overflow-hidden">
-                    <div
-                      className={`h-1.5 rounded-full ${item.status === 'Critical' ? 'bg-rose-500' : 'bg-amber-500'}`}
-                      style={{ width: `${getStockPercentage(item.stock, item.threshold)}%` }}
-                    ></div>
-                  </div>
-                </div>
-                <div className="grid grid-cols-2 gap-2 text-xs pt-2 border-t border-zinc-50">
-                  <div>
-                    <p className="text-zinc-400 mb-0.5">Supplier</p>
-                    <p className="font-medium text-zinc-700 truncate">{item.supplier}</p>
-                  </div>
-                  <div>
-                    <p className="text-zinc-400 mb-0.5">Last Restock</p>
-                    <p className="font-medium text-zinc-700">{item.lastRestock}</p>
-                  </div>
-                </div>
-              </div>
-            ) : (
-              <div className="space-y-4 mb-6 flex-1 bg-zinc-50/50 p-3 rounded-lg border border-zinc-100">
-                <div className="flex justify-between items-center border-b border-zinc-100 pb-3">
-                  <div>
-                    <p className="text-[10px] text-zinc-400 font-bold uppercase tracking-wider mb-1">Target Reorder Date</p>
-                    <p className={`font-bold text-base ${item.isPastReorderDate ? 'text-violet-600' : 'text-zinc-900'}`}>
-                      {item.isPastReorderDate ? 'Immediate' : item.projectedReorderDate}
-                    </p>
-                  </div>
-                  <div className="text-right">
-                    <p className="text-[10px] text-zinc-400 font-bold uppercase tracking-wider mb-1">30-Day Velocity</p>
-                    <p className="font-bold text-sm text-zinc-700">{item.dailyConsumptionRate} / day</p>
-                  </div>
-                </div>
-
-                {editingItem === item.id ? (
-                  <div className="space-y-3 animate-in fade-in zoom-in-95 duration-200">
-                    <div className="flex gap-3">
-                      <label className="flex-1 text-xs font-medium text-zinc-600">
-                        Lead Time (Days)
-                        <input type="number" className="w-full mt-1 p-1.5 border border-zinc-200 rounded text-sm" value={forecastVars.leadTime} onChange={(e) => setForecastVars({ ...forecastVars, leadTime: Number(e.target.value) })} />
-                      </label>
-                      <label className="flex-1 text-xs font-medium text-zinc-600">
-                        Safety Stock
-                        <input type="number" className="w-full mt-1 p-1.5 border border-zinc-200 rounded text-sm" value={forecastVars.safetyStock} onChange={(e) => setForecastVars({ ...forecastVars, safetyStock: Number(e.target.value) })} />
-                      </label>
-                    </div>
-                    <div className="flex gap-2">
-                      <button onClick={() => handleUpdateForecast(item.id)} className="flex-1 bg-black text-white text-xs font-bold py-1.5 rounded hover:bg-zinc-800 transition-colors">Save Data</button>
-                      <button onClick={() => setEditingItem(null)} className="flex-1 bg-zinc-200 text-zinc-700 text-xs font-bold py-1.5 rounded hover:bg-zinc-300 transition-colors">Cancel</button>
-                    </div>
-                  </div>
-                ) : (
-                  <div className="flex justify-between items-end group cursor-pointer" onClick={() => { setEditingItem(item.id); setForecastVars({ leadTime: item.leadTime, safetyStock: item.safetyStock }); }}>
-                    <div className="space-y-1">
-                      <p className="text-xs text-zinc-500">Lead Time: <span className="font-medium text-zinc-900">{item.leadTime} days</span></p>
-                      <p className="text-xs text-zinc-500">Safety Stock: <span className="font-medium text-zinc-900">{item.safetyStock} units</span></p>
-                      <p className="text-xs text-zinc-500 pt-1">Reorder Point: <span className="font-medium text-zinc-900">{item.reorderPoint} units</span></p>
-                    </div>
-                    <span className="text-[10px] font-bold text-orange-600 bg-orange-50 px-2 py-1 rounded opacity-0 group-hover:opacity-100 transition-opacity">EDIT PARAMS</span>
-                  </div>
+      <div className="table-container mt-0">
+        <div className="px-6 py-4 border-b border-zinc-100 bg-zinc-50/60 flex items-center justify-between gap-3">
+          <div>
+            <p className="text-xs font-bold text-zinc-800">Inventory Alert List</p>
+            <p className="text-[10px] text-zinc-500">Color legend: <span className="font-semibold text-rose-600">Red = Critical</span>, <span className="font-semibold text-amber-600">Yellow = Low</span>, <span className="font-semibold text-zinc-500">Gray = Normal</span></p>
+          </div>
+          <span className="text-[10px] font-bold uppercase tracking-wider text-zinc-500">{filteredData.length} items</span>
+        </div>
+        <div className="overflow-x-auto">
+          <table className="w-full border-collapse text-sm">
+            <thead>
+              <tr>
+                <th className="table-head-cell">Item</th>
+                <th className="table-head-cell">Category</th>
+                <th className="table-head-cell text-center">Stock</th>
+                <th className="table-head-cell text-center">Threshold</th>
+                <th className="table-head-cell">Status</th>
+                <th className="table-head-cell">Supplier</th>
+                <th className="table-head-cell">Last Restock</th>
+                {viewMode === 'Forecasting' && (
+                  <>
+                    <th className="table-head-cell text-center">Velocity</th>
+                    <th className="table-head-cell text-center">Reorder Point</th>
+                    <th className="table-head-cell">Projected Reorder Date</th>
+                    <th className="table-head-cell">Forecast Settings</th>
+                  </>
                 )}
-              </div>
-            )}
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-zinc-100">
+              {filteredData.map((item) => (
+                <tr key={item.id} className={`table-row ${item.status === 'Critical' ? 'bg-rose-50/30' : item.status === 'Low' ? 'bg-amber-50/20' : ''}`}>
+                  <td className="table-data-cell font-bold text-zinc-900">{item.item}</td>
+                  <td className="table-data-cell text-zinc-600">{item.category}</td>
+                  <td className="table-data-cell text-center font-bold">{item.stock}</td>
+                  <td className="table-data-cell text-center text-zinc-500">{item.threshold}</td>
+                  <td className="table-data-cell">
+                    <span className={`px-2.5 py-1 rounded-full text-[10px] font-bold border ${viewMode === 'Forecasting' && item.isPastReorderDate ? 'text-violet-600 bg-violet-50 border-violet-200' : getStatusColor(item.status)}`}>
+                      {viewMode === 'Forecasting' && item.isPastReorderDate ? 'REORDER NOW' : item.status.toUpperCase()}
+                    </span>
+                  </td>
+                  <td className="table-data-cell text-zinc-600">{item.supplier}</td>
+                  <td className="table-data-cell text-zinc-500">{item.lastRestock}</td>
+                  {viewMode === 'Forecasting' && (
+                    <>
+                      <td className="table-data-cell text-center font-medium text-zinc-700">{item.dailyConsumptionRate}/day</td>
+                      <td className="table-data-cell text-center font-medium text-zinc-700">{item.reorderPoint}</td>
+                      <td className="table-data-cell">
+                        <span className={item.isPastReorderDate ? 'font-bold text-violet-700' : 'text-zinc-600'}>
+                          {item.isPastReorderDate ? 'Immediate' : item.projectedReorderDate}
+                        </span>
+                      </td>
+                      <td className="table-data-cell">
+                        {editingItem === item.id ? (
+                          <div className="space-y-2 min-w-[220px]">
+                            <div className="grid grid-cols-2 gap-2">
+                              <input type="number" className="w-full p-1.5 border border-zinc-200 rounded text-xs" value={forecastVars.leadTime} onChange={(e) => setForecastVars({ ...forecastVars, leadTime: Number(e.target.value) })} placeholder="Lead time" />
+                              <input type="number" className="w-full p-1.5 border border-zinc-200 rounded text-xs" value={forecastVars.safetyStock} onChange={(e) => setForecastVars({ ...forecastVars, safetyStock: Number(e.target.value) })} placeholder="Safety stock" />
+                            </div>
+                            <div className="flex gap-2">
+                              <button onClick={() => handleUpdateForecast(item.id)} className="flex-1 bg-black text-white text-[10px] font-bold py-1.5 rounded hover:bg-zinc-800 transition-colors">Save</button>
+                              <button onClick={() => setEditingItem(null)} className="flex-1 bg-zinc-200 text-zinc-700 text-[10px] font-bold py-1.5 rounded hover:bg-zinc-300 transition-colors">Cancel</button>
+                            </div>
+                          </div>
+                        ) : (
+                          <button onClick={() => { setEditingItem(item.id); setForecastVars({ leadTime: item.leadTime, safetyStock: item.safetyStock }); }} className="text-[10px] font-bold text-orange-600 bg-orange-50 px-2 py-1 rounded border border-orange-100 hover:bg-orange-100 transition-colors">
+                            Edit Lead/Safety
+                          </button>
+                        )}
+                      </td>
+                    </>
+                  )}
+                </tr>
+              ))}
+              {loading ? (
+                <tr>
+                  <td colSpan={viewMode === 'Forecasting' ? 11 : 7} className="py-12 text-center text-zinc-400">
+                    <div className="animate-spin text-3xl mb-2 inline-block">⏳</div>
+                    <p>Crunching supply chain data...</p>
+                  </td>
+                </tr>
+              ) : filteredData.length === 0 ? (
+                <tr>
+                  <td colSpan={viewMode === 'Forecasting' ? 11 : 7} className="py-12 text-center text-zinc-400">
+                    <div className="text-3xl mb-2">📦</div>
+                    <p>No inventory items found for the selected filter.</p>
+                  </td>
+                </tr>
+              ) : null}
+            </tbody>
+          </table>
+        </div>
+      </div>
 
-            <button className={`w-full py-2.5 rounded-lg text-sm font-bold shadow-sm transition-all active:scale-[0.98] flex justify-center items-center gap-2 ${item.isPastReorderDate && viewMode === 'Forecasting' ? 'bg-violet-600 text-white hover:bg-violet-700' : 'bg-zinc-900 text-white hover:bg-black'}`}>
-              Generate Purchase Order
-            </button>
+      <div className="table-container mt-0">
+        <div className="px-6 py-4 border-b border-zinc-100 bg-rose-50/60 flex items-center justify-between gap-3">
+          <div>
+            <p className="text-xs font-bold text-rose-700">Automated To-Buy List</p>
+            <p className="text-[10px] text-rose-600">Generated from Critical (red) and reorder-now items.</p>
           </div>
-        ))}
-
-        {loading && (
-          <div className="col-span-full py-12 text-center text-zinc-400 bg-white rounded-xl border border-zinc-200 border-dashed">
-            <div className="animate-spin text-3xl mb-2 inline-block">⏳</div>
-            <p className="font-medium">Crunching supply chain data...</p>
-          </div>
-        )}
+          <span className="text-[10px] font-bold uppercase tracking-wider text-rose-700">{toBuyList.length} priority items</span>
+        </div>
+        <div className="overflow-x-auto">
+          <table className="w-full border-collapse text-sm">
+            <thead>
+              <tr>
+                <th className="table-head-cell">Priority</th>
+                <th className="table-head-cell">Item</th>
+                <th className="table-head-cell">Status</th>
+                <th className="table-head-cell text-center">Current Stock</th>
+                <th className="table-head-cell text-center">Suggested Qty</th>
+                <th className="table-head-cell">Supplier</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-zinc-100">
+              {toBuyList.map((item) => {
+                const suggestedQty = Math.max(0, Math.ceil(item.reorderPoint - item.stock));
+                const priority = item.status === 'Critical' ? 'HIGH' : 'MEDIUM';
+                return (
+                  <tr key={`${item.id}-buy`} className="table-row">
+                    <td className="table-data-cell">
+                      <span className={`px-2 py-1 rounded-full text-[10px] font-bold border ${priority === 'HIGH' ? 'text-rose-600 bg-rose-50 border-rose-200' : 'text-violet-600 bg-violet-50 border-violet-200'}`}>
+                        {priority}
+                      </span>
+                    </td>
+                    <td className="table-data-cell font-bold text-zinc-900">{item.item}</td>
+                    <td className="table-data-cell">
+                      <span className={`px-2.5 py-1 rounded-full text-[10px] font-bold border ${getStatusColor(item.status)}`}>
+                        {item.status.toUpperCase()}
+                      </span>
+                    </td>
+                    <td className="table-data-cell text-center font-bold">{item.stock}</td>
+                    <td className="table-data-cell text-center font-bold text-zinc-800">{suggestedQty}</td>
+                    <td className="table-data-cell text-zinc-600">{item.supplier}</td>
+                  </tr>
+                );
+              })}
+              {toBuyList.length === 0 && !loading ? (
+                <tr>
+                  <td colSpan="6" className="py-10 text-center text-zinc-400">
+                    All good for now. No critical or reorder-now items.
+                  </td>
+                </tr>
+              ) : null}
+            </tbody>
+          </table>
+        </div>
       </div>
     </div>
   );

@@ -182,7 +182,9 @@ const UserManagement = ({ currentUser }) => {
 
   const getRoleBadge = (role) => {
     switch(role) {
-      case 'Admin': return 'text-indigo-700 bg-indigo-50 border border-indigo-200';
+      case 'Admin':
+      case 'admin':
+        return 'text-indigo-700 bg-indigo-50 border border-indigo-200';
       case 'Manager': return 'text-violet-700 bg-violet-50 border border-violet-200';
       default: return 'text-zinc-700 bg-zinc-50 border border-zinc-200';
     }

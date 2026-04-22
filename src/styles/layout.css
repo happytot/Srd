@@ -1,12 +1,12 @@
 /* --- Layout Components --- */
 .dashboard-container {
-  @apply flex min-h-screen bg-zinc-50 font-sans text-zinc-900;
+  @apply flex h-screen overflow-hidden bg-zinc-50 font-sans text-zinc-900;
 }
 
 .sidebar {
-  @apply hidden md:flex flex-col w-52 xl:w-64 bg-white border-r border-zinc-200 p-4 xl:p-6 transition-all duration-300;
+  @apply hidden md:flex md:fixed md:inset-y-0 md:left-0 flex-col w-52 xl:w-64 bg-white border-r border-zinc-200 p-4 xl:p-6 transition-all duration-300;
 }
 
 .main-content {
-  @apply flex-1 p-4 md:p-8 overflow-y-auto;
+  @apply flex-1 p-4 md:p-8 overflow-y-auto h-screen md:ml-52 xl:ml-64;
 }
