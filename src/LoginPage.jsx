@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import React, { useState } from 'react';
 import { signInWithEmailAndPassword } from 'firebase/auth';
 import { doc, getDoc } from 'firebase/firestore';
 import { auth, db } from './firebase';
@@ -20,26 +20,26 @@ const LoginPage = ({ onLogin }) => {
       const userCredential = await signInWithEmailAndPassword(auth, email, password);
       const user = userCredential.user;
 
-      // Force a token refresh to check for Custom Claims from the POS/Inventory team
+      // Refresh token to get latest custom claims
       await user.getIdToken(true);
       const idTokenResult = await user.getIdTokenResult();
       const authRole = idTokenResult.claims?.role;
 
-      // Fetch the UI data from the users collection (Allowed because isOwner(userId) is true in rules)
+      // Fetch user profile from Firestore
       const userDocRef = doc(db, 'users', user.uid);
       const userDocSnap = await getDoc(userDocRef);
 
       if (userDocSnap.exists()) {
         const userData = userDocSnap.data();
-
-        if (authRole !== 'admin' && authRole !== 'manager') {
-          console.warn("⚠️ User lacks custom claims. The shared Firestore rules will block most reads.");
-        }
-
-        onLogin({ uid: user.uid, email: user.email, authRole, ...userData });
+        onLogin({
+          uid: user.uid,
+          email: user.email,
+          authRole,
+          ...userData
+        });
       } else {
-        setError('User profile not found in the database. Please contact an administrator.');
-        auth.signOut();
+        setError('User profile not found. Please contact an administrator.');
+        await auth.signOut();
       }
     } catch (err) {
       console.error("Login Error:", err);
@@ -73,6 +73,7 @@ const LoginPage = ({ onLogin }) => {
                 {error}
               </div>
             )}
+
             <div>
               <label htmlFor="email" className="block text-sm font-medium text-zinc-700">
                 Email address

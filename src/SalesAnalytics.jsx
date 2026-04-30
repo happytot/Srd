@@ -1,9 +1,9 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { collection, query, getDocs, orderBy } from 'firebase/firestore';
 import { db } from './firebase';
 import {
-  LineChart, Line, AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, ResponsiveContainer,
-  PieChart, Pie, Cell, BarChart, Bar, Legend
+  LineChart, Line, AreaChart, Area, XAxis, YAxis, CartesianGrid, 
+  Tooltip as RechartsTooltip, ResponsiveContainer, PieChart, Pie, Cell, Legend
 } from 'recharts';
 import ExportEngine from './utils/ExportEngine';
 
@@ -14,36 +14,39 @@ const SalesAnalytics = ({ globalDateRange, globalCustomStart, globalCustomEnd })
   const [reportData, setReportData] = useState([]);
   const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
-    const fetchOrders = async () => {
-      try {
-        const q = query(collection(db, 'orders'), orderBy('createdAt', 'desc'));
-        const querySnapshot = await getDocs(q);
-        const data = querySnapshot.docs.map(doc => {
-          const order = doc.data();
-          const categories = order.items ? order.items.map(item => item.category) : [];
-          const uniqueCategories = [...new Set(categories.filter(Boolean))];
+  // Fetch orders
+  const fetchOrders = useCallback(async () => {
+    try {
+      const q = query(collection(db, 'orders'), orderBy('createdAt', 'desc'));
+      const snapshot = await getDocs(q);
+      
+      const data = snapshot.docs.map(doc => {
+        const order = doc.data();
+        const categories = order.items ? order.items.map(item => item.category) : [];
+        const uniqueCategories = [...new Set(categories.filter(Boolean))];
 
-          return {
-            id: doc.id,
-            timestamp: order.createdAt ? order.createdAt.toDate() : new Date(0),
-            items: order.items || [],
-            amount: order.totalAmount || 0,
-            categories: uniqueCategories,
-          };
-        });
-        setReportData(data);
-      } catch (error) {
-        console.error("Error fetching orders:", error);
-      } finally {
-        setLoading(false);
-      }
-    };
-    
-    fetchOrders();
+        return {
+          id: doc.id,
+          timestamp: order.createdAt ? order.createdAt.toDate() : new Date(0),
+          items: order.items || [],
+          amount: Number(order.totalAmount) || 0,
+          categories: uniqueCategories,
+        };
+      });
+      
+      setReportData(data);
+    } catch (error) {
+      console.error("Error fetching orders:", error);
+    } finally {
+      setLoading(false);
+    }
   }, []);
 
-  // Filter Data Date Range
+  useEffect(() => {
+    fetchOrders();
+  }, [fetchOrders]);
+
+  // Date Range Filtering
   const { currentPeriodData, previousPeriodData } = useMemo(() => {
     const now = new Date();
     const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
@@ -56,65 +59,64 @@ const SalesAnalytics = ({ globalDateRange, globalCustomStart, globalCustomEnd })
     let endPrev = new Date(today);
 
     if (globalDateRange === 'Today') {
-      startCurrent.setHours(0,0,0,0);
-      
+      startCurrent.setHours(0, 0, 0, 0);
       startPrev.setDate(startPrev.getDate() - 1);
-      startPrev.setHours(0,0,0,0);
-      endPrev = new Date(startPrev);
-      endPrev.setHours(23,59,59,999);
-    } else if (globalDateRange === 'Last 7 Days') {
+      startPrev.setHours(0, 0, 0, 0);
+      endPrev.setHours(23, 59, 59, 999);
+    } 
+    else if (globalDateRange === 'Last 7 Days') {
       startCurrent.setDate(startCurrent.getDate() - 6);
-      startCurrent.setHours(0,0,0,0);
-      
+      startCurrent.setHours(0, 0, 0, 0);
       startPrev.setDate(startCurrent.getDate() - 7);
       endPrev.setDate(startCurrent.getDate() - 1);
-      endPrev.setHours(23,59,59,999);
-    } else if (globalDateRange === 'Month to Date') {
+      endPrev.setHours(23, 59, 59, 999);
+    } 
+    else if (globalDateRange === 'Month to Date') {
       startCurrent = new Date(now.getFullYear(), now.getMonth(), 1);
-      startCurrent.setHours(0,0,0,0);
-      
-      // Prev period is Previous Month, same number of days
+      startCurrent.setHours(0, 0, 0, 0);
       startPrev = new Date(now.getFullYear(), now.getMonth() - 1, 1);
       endPrev = new Date(startPrev);
       endPrev.setDate(endPrev.getDate() + (now.getDate() - 1));
-      endPrev.setHours(23,59,59,999);
-    } else if (globalDateRange === 'Last Quarter') {
+      endPrev.setHours(23, 59, 59, 999);
+    } 
+    else if (globalDateRange === 'Last Quarter') {
       startCurrent.setDate(startCurrent.getDate() - 89);
-      startCurrent.setHours(0,0,0,0);
-      
+      startCurrent.setHours(0, 0, 0, 0);
       startPrev.setDate(startCurrent.getDate() - 90);
       endPrev.setDate(startCurrent.getDate() - 1);
-      endPrev.setHours(23,59,59,999);
-    } else if (globalDateRange === 'Custom') {
-      if (globalCustomStart && globalCustomEnd) {
-        startCurrent = new Date(globalCustomStart);
-        startCurrent.setHours(0,0,0,0);
-        endCurrent = new Date(globalCustomEnd);
-        endCurrent.setHours(23,59,59,999);
-        
-        const diffTime = endCurrent.getTime() - startCurrent.getTime();
-        startPrev = new Date(startCurrent.getTime() - diffTime - 86400000);
-        endPrev = new Date(startCurrent.getTime() - 86400000);
-        endPrev.setHours(23,59,59,999);
-      }
-    } else {
-      // Fallback fallback e.g., default last 30
-      startCurrent.setDate(startCurrent.getDate() - 29);
-      startCurrent.setHours(0,0,0,0);
+      endPrev.setHours(23, 59, 59, 999);
+    } 
+    else if (globalDateRange === 'Custom' && globalCustomStart && globalCustomEnd) {
+      startCurrent = new Date(globalCustomStart);
+      startCurrent.setHours(0, 0, 0, 0);
+      endCurrent = new Date(globalCustomEnd);
+      endCurrent.setHours(23, 59, 59, 999);
       
+      const diffTime = endCurrent.getTime() - startCurrent.getTime();
+      startPrev = new Date(startCurrent.getTime() - diffTime - 86400000);
+      endPrev = new Date(startCurrent.getTime() - 86400000);
+      endPrev.setHours(23, 59, 59, 999);
+    } 
+    else {
+      // Default: Last 30 days
+      startCurrent.setDate(startCurrent.getDate() - 29);
+      startCurrent.setHours(0, 0, 0, 0);
       startPrev.setDate(startCurrent.getDate() - 30);
       endPrev.setDate(startCurrent.getDate() - 1);
-      endPrev.setHours(23,59,59,999);
+      endPrev.setHours(23, 59, 59, 999);
     }
 
-    const current = reportData.filter(item => item.timestamp >= startCurrent && item.timestamp <= endCurrent);
-    const prev = reportData.filter(item => item.timestamp >= startPrev && item.timestamp <= endPrev);
+    const current = reportData.filter(item => 
+      item.timestamp >= startCurrent && item.timestamp <= endCurrent
+    );
+    const prev = reportData.filter(item => 
+      item.timestamp >= startPrev && item.timestamp <= endPrev
+    );
 
     return { currentPeriodData: current, previousPeriodData: prev };
   }, [reportData, globalDateRange, globalCustomStart, globalCustomEnd]);
 
-
-  // Time Series Aggregation
+  // Time Series Data
   const timeSeriesData = useMemo(() => {
     const agg = {};
     
@@ -125,22 +127,20 @@ const SalesAnalytics = ({ globalDateRange, globalCustomStart, globalCustomEnd })
 
       if (timeGranularity === 'Daily') {
         key = d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
-        sortKey = d.getTime();
-      } else if (timeGranularity === 'Monthly') {
+        sortKey = new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
+      } 
+      else if (timeGranularity === 'Monthly') {
         key = d.toLocaleDateString('en-US', { month: 'short', year: 'numeric' });
         sortKey = new Date(d.getFullYear(), d.getMonth(), 1).getTime();
-      } else if (timeGranularity === 'Quarterly') {
+      } 
+      else if (timeGranularity === 'Quarterly') {
         const q = Math.floor(d.getMonth() / 3) + 1;
         key = `Q${q} ${d.getFullYear()}`;
-        sortKey = new Date(d.getFullYear(), (q-1)*3, 1).getTime();
-      } else if (timeGranularity === 'Yearly') {
+        sortKey = new Date(d.getFullYear(), (q - 1) * 3, 1).getTime();
+      } 
+      else if (timeGranularity === 'Yearly') {
         key = `${d.getFullYear()}`;
         sortKey = new Date(d.getFullYear(), 0, 1).getTime();
-      }
-
-      // We floor sortKey slightly to group same days
-      if (timeGranularity === 'Daily') {
-        sortKey = new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
       }
 
       if (!agg[sortKey]) {
@@ -155,9 +155,10 @@ const SalesAnalytics = ({ globalDateRange, globalCustomStart, globalCustomEnd })
       .map(k => agg[k]);
   }, [currentPeriodData, timeGranularity]);
 
-  // Category Aggregation
+  // Category Breakdown
   const categoryData = useMemo(() => {
     const catMap = {};
+    
     currentPeriodData.forEach(order => {
       order.items.forEach(item => {
         const c = item.category || 'Uncategorized';
@@ -166,14 +167,15 @@ const SalesAnalytics = ({ globalDateRange, globalCustomStart, globalCustomEnd })
         catMap[c].quantity += (item.quantity || 1);
       });
     });
+    
     return Object.values(catMap).sort((a, b) => b.value - a.value);
   }, [currentPeriodData]);
 
-  // Comparative Metrics
+  // Metrics
   const currentRevenue = currentPeriodData.reduce((acc, curr) => acc + curr.amount, 0);
   const previousRevenue = previousPeriodData.reduce((acc, curr) => acc + curr.amount, 0);
   const revenueVariance = previousRevenue === 0 ? 100 : ((currentRevenue - previousRevenue) / previousRevenue) * 100;
-  
+
   const currentOrders = currentPeriodData.length;
   const previousOrders = previousPeriodData.length;
   const ordersVariance = previousOrders === 0 ? 100 : ((currentOrders - previousOrders) / previousOrders) * 100;
@@ -184,9 +186,8 @@ const SalesAnalytics = ({ globalDateRange, globalCustomStart, globalCustomEnd })
 
   const VarianceBadge = ({ value }) => {
     const isPositive = value >= 0;
-    const colorClass = isPositive ? 'text-emerald-600 bg-emerald-50' : 'text-rose-600 bg-rose-50';
     return (
-      <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${colorClass}`}>
+      <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${isPositive ? 'text-emerald-600 bg-emerald-50' : 'text-rose-600 bg-rose-50'}`}>
         {isPositive ? '+' : ''}{value.toFixed(1)}% vs Prev
       </span>
     );
@@ -197,7 +198,7 @@ const SalesAnalytics = ({ globalDateRange, globalCustomStart, globalCustomEnd })
       return (
         <div className="bg-black text-white p-3 rounded-lg text-xs shadow-xl z-50">
           <p className="font-bold text-zinc-300 mb-1">{label}</p>
-          <p className="text-sm font-bold">₱{payload[0].value.toLocaleString(undefined, {minimumFractionDigits: 2})}</p>
+          <p className="text-sm font-bold">₱{payload[0].value.toLocaleString(undefined, { minimumFractionDigits: 2 })}</p>
           {payload[0].payload.count !== undefined && (
             <p className="text-zinc-400 mt-1">{payload[0].payload.count} Transactions</p>
           )}
@@ -210,17 +211,17 @@ const SalesAnalytics = ({ globalDateRange, globalCustomStart, globalCustomEnd })
   return (
     <div className="flex flex-col gap-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
       
-      {/* Header and Filters */}
+      {/* Header */}
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 bg-white p-4 rounded-xl border border-zinc-200 shadow-sm">
         <div className="flex flex-wrap items-center gap-3">
-          <div className="flex items-center gap-2">
-             <span className="text-xs font-bold text-emerald-600 bg-emerald-50 px-2 py-1 rounded">Global Date Sync: {globalDateRange}</span>
-          </div>
+          <span className="text-xs font-bold text-emerald-600 bg-emerald-50 px-2 py-1 rounded">
+            Global Date Sync: {globalDateRange}
+          </span>
           
           <select 
             value={timeGranularity} 
             onChange={(e) => setTimeGranularity(e.target.value)}
-            className="search-input !w-auto !bg-white border !border-zinc-200 font-medium text-zinc-700 hover:border-zinc-300 cursor-pointer"
+            className="search-input !w-auto !bg-white border !border-zinc-200 font-medium text-zinc-700 cursor-pointer"
           >
             <option>Daily</option>
             <option>Monthly</option>
@@ -241,19 +242,19 @@ const SalesAnalytics = ({ globalDateRange, globalCustomStart, globalCustomEnd })
         </div>
       ) : (
         <>
-          {/* Comparative Analytics Metrics */}
+          {/* Metrics Cards */}
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
             <div className="content-card flex flex-col justify-between h-full hover:border-black transition-colors duration-300">
               <div>
                 <p className="text-xs font-bold text-zinc-400 uppercase tracking-wider mb-1">Total Revenue</p>
-                <p className="text-3xl font-black tracking-tight">₱{currentRevenue.toLocaleString(undefined, {minimumFractionDigits: 2})}</p>
+                <p className="text-3xl font-black tracking-tight">₱{currentRevenue.toLocaleString(undefined, { minimumFractionDigits: 2 })}</p>
               </div>
               <div className="mt-4 flex items-center gap-2">
                 <VarianceBadge value={revenueVariance} />
                 <span className="text-[10px] text-zinc-400">vs prev period</span>
               </div>
             </div>
-            
+
             <div className="content-card flex flex-col justify-between h-full hover:border-black transition-colors duration-300">
               <div>
                 <p className="text-xs font-bold text-zinc-400 uppercase tracking-wider mb-1">Total Orders</p>
@@ -264,11 +265,11 @@ const SalesAnalytics = ({ globalDateRange, globalCustomStart, globalCustomEnd })
                 <span className="text-[10px] text-zinc-400">vs prev period</span>
               </div>
             </div>
-            
+
             <div className="content-card flex flex-col justify-between h-full hover:border-black transition-colors duration-300">
               <div>
                 <p className="text-xs font-bold text-zinc-400 uppercase tracking-wider mb-1">Avg Order Value</p>
-                <p className="text-3xl font-black tracking-tight">₱{currentAvg.toLocaleString(undefined, {minimumFractionDigits: 2})}</p>
+                <p className="text-3xl font-black tracking-tight">₱{currentAvg.toLocaleString(undefined, { minimumFractionDigits: 2 })}</p>
               </div>
               <div className="mt-4 flex items-center gap-2">
                 <VarianceBadge value={avgVariance} />
@@ -278,7 +279,7 @@ const SalesAnalytics = ({ globalDateRange, globalCustomStart, globalCustomEnd })
           </div>
 
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-            {/* Time-Series Chart */}
+            {/* Sales Trend Chart */}
             <div className="lg:col-span-2 content-card">
               <div className="flex justify-between items-start mb-6">
                 <div>
@@ -292,7 +293,7 @@ const SalesAnalytics = ({ globalDateRange, globalCustomStart, globalCustomEnd })
                   📸 Export PNG
                 </button>
               </div>
-              
+
               <div id="analytics-area-chart" className="h-[300px] w-full mt-4 bg-white p-2">
                 {timeSeriesData.length > 0 ? (
                   <ResponsiveContainer width="100%" height="100%">
@@ -304,22 +305,36 @@ const SalesAnalytics = ({ globalDateRange, globalCustomStart, globalCustomEnd })
                         </linearGradient>
                       </defs>
                       <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e4e4e7" />
-                      <XAxis dataKey="dateLabel" axisLine={false} tickLine={false} tick={{fill: '#a1a1aa', fontSize: 12}} dy={10} />
-                      <YAxis axisLine={false} tickLine={false} tick={{fill: '#a1a1aa', fontSize: 12}} tickFormatter={(value) => `₱${value >= 1000 ? (value/1000).toFixed(1)+'k' : value}`} dx={-10} />
+                      <XAxis dataKey="dateLabel" axisLine={false} tickLine={false} tick={{ fill: '#a1a1aa', fontSize: 12 }} dy={10} />
+                      <YAxis 
+                        axisLine={false} 
+                        tickLine={false} 
+                        tick={{ fill: '#a1a1aa', fontSize: 12 }} 
+                        tickFormatter={(value) => `₱${value >= 1000 ? (value / 1000).toFixed(1) + 'k' : value}`} 
+                        dx={-10} 
+                      />
                       <RechartsTooltip content={<CustomTooltip />} />
-                      <Area type="monotone" dataKey="sales" stroke="#000" strokeWidth={3} fillOpacity={1} fill="url(#colorSales)" activeDot={{r: 6, strokeWidth: 0, fill: '#000'}} />
+                      <Area 
+                        type="monotone" 
+                        dataKey="sales" 
+                        stroke="#000" 
+                        strokeWidth={3} 
+                        fillOpacity={1} 
+                        fill="url(#colorSales)" 
+                        activeDot={{ r: 6, strokeWidth: 0, fill: '#000' }} 
+                      />
                     </AreaChart>
                   </ResponsiveContainer>
                 ) : (
                   <div className="w-full h-full flex flex-col items-center justify-center text-zinc-400">
-                     <span className="text-3xl mb-2">📈</span>
-                     <p className="text-sm">No trend data available for this range</p>
+                    <span className="text-3xl mb-2">📈</span>
+                    <p className="text-sm">No trend data available for this range</p>
                   </div>
                 )}
               </div>
             </div>
 
-            {/* Category Breakdown Component */}
+            {/* Category Breakdown */}
             <div className="content-card flex flex-col">
               <div className="flex justify-between items-start mb-6">
                 <div>
@@ -330,10 +345,10 @@ const SalesAnalytics = ({ globalDateRange, globalCustomStart, globalCustomEnd })
                   onClick={() => ExportEngine.exportToImage('analytics-pie-chart', 'Category_Breakdown')}
                   className="px-2 py-1 text-[10px] font-bold text-zinc-500 bg-zinc-100 hover:bg-zinc-200 rounded transition-colors"
                 >
-                  📸 Grid
+                  📸 Export
                 </button>
               </div>
-              
+
               <div id="analytics-pie-chart" className="flex-1 min-h-[250px] relative bg-white pb-4">
                 {categoryData.length > 0 ? (
                   <ResponsiveContainer width="100%" height="100%">
@@ -351,7 +366,7 @@ const SalesAnalytics = ({ globalDateRange, globalCustomStart, globalCustomEnd })
                           <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
                         ))}
                       </Pie>
-                      <RechartsTooltip formatter={(value) => `₱${value.toLocaleString(undefined, {minimumFractionDigits: 2})}`} />
+                      <RechartsTooltip formatter={(value) => `₱${value.toLocaleString(undefined, { minimumFractionDigits: 2 })}`} />
                     </PieChart>
                   </ResponsiveContainer>
                 ) : (
@@ -360,27 +375,25 @@ const SalesAnalytics = ({ globalDateRange, globalCustomStart, globalCustomEnd })
                   </div>
                 )}
               </div>
-              
-              <div className="mt-4 space-y-2 max-h-[120px] overflow-y-auto pr-2 custom-scrollbar">
+
+              <div className="mt-4 space-y-2 max-h-[120px] overflow-y-auto pr-2">
                 {categoryData.map((cat, idx) => (
                   <div key={idx} className="flex items-center justify-between text-xs">
                     <div className="flex items-center gap-2">
-                       <span className="w-3 h-3 rounded-full" style={{ backgroundColor: COLORS[idx % COLORS.length] }}></span>
-                       <span className="font-bold truncate max-w-[100px]">{cat.name}</span>
+                      <span className="w-3 h-3 rounded-full" style={{ backgroundColor: COLORS[idx % COLORS.length] }}></span>
+                      <span className="font-bold truncate max-w-[100px]">{cat.name}</span>
                     </div>
                     <div className="flex items-center gap-3">
-                       <span className="text-zinc-400">{((cat.value / currentRevenue) * 100).toFixed(1)}%</span>
-                       <span className="font-bold">₱{cat.value.toLocaleString(undefined, {minimumFractionDigits: 2})}</span>
+                      <span className="text-zinc-400">{((cat.value / currentRevenue) * 100).toFixed(1)}%</span>
+                      <span className="font-bold">₱{cat.value.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
                     </div>
                   </div>
                 ))}
               </div>
             </div>
           </div>
-          
         </>
       )}
-
     </div>
   );
 };

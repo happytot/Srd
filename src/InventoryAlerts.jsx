@@ -11,7 +11,7 @@ const InventoryAlerts = () => {
   const [editingItem, setEditingItem] = useState(null);
   const [forecastVars, setForecastVars] = useState({ leadTime: 0, safetyStock: 0 });
 
-  // 1. Fetch Sales Velocity from the last 30 days
+  // 1. Fetch Sales Velocity (last 30 days)
   useEffect(() => {
     const thirtyDaysAgo = new Date();
     thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
@@ -35,7 +35,6 @@ const InventoryAlerts = () => {
         }
       });
 
-      // Convert 30-day totals into a daily consumption rate
       const dailyRateMap = {};
       Object.keys(velocityMap).forEach(key => {
         dailyRateMap[key] = Number((velocityMap[key] / 30).toFixed(2));
@@ -47,13 +46,13 @@ const InventoryAlerts = () => {
     return () => unsubOrders();
   }, []);
 
-  // 2. Fetch Base Inventory
+  // 2. Fetch Inventory
   useEffect(() => {
     const inventoryQuery = query(collection(db, 'inventory'), where('status', '!=', 'deleted'));
 
-    const unsubInventory = onSnapshot(inventoryQuery, (querySnapshot) => {
+    const unsubInventory = onSnapshot(inventoryQuery, (snapshot) => {
       const data = [];
-      querySnapshot.forEach(docSnap => {
+      snapshot.forEach(docSnap => {
         data.push({ id: docSnap.id, ...docSnap.data() });
       });
       setRawInventory(data);
@@ -66,7 +65,7 @@ const InventoryAlerts = () => {
     return () => unsubInventory();
   }, []);
 
-  // 3. Merge & Compute Supply Chain Math
+  // 3. Merge & Compute Supply Chain Metrics
   const inventoryData = useMemo(() => {
     const mergedData = rawInventory.map(inv => {
       const qty = Number(inv.quantity) || 0;
@@ -75,12 +74,9 @@ const InventoryAlerts = () => {
       const leadTime = Number(inv.leadTimeDays) || 7;
       const safetyStock = Number(inv.safetyStock) || 15;
 
-      // Dynamic Trailing Velocity (fallback to 0 if no sales in 30 days)
       const dailyConsumptionRate = itemVelocity[inv.name] || 0;
-
       const reorderPoint = (leadTime * dailyConsumptionRate) + safetyStock;
 
-      // Prevent Infinity if DCR is 0
       const daysUntilReorder = dailyConsumptionRate > 0
         ? Math.floor((qty - reorderPoint) / dailyConsumptionRate)
         : 999;
@@ -93,11 +89,8 @@ const InventoryAlerts = () => {
       const isPastReorderDate = daysUntilReorder <= 0 && dailyConsumptionRate > 0;
 
       let alertStatus = 'Normal';
-      if (qty <= threshold * 0.3) {
-        alertStatus = 'Critical';
-      } else if (qty <= threshold || inv.isLowStock) {
-        alertStatus = 'Low';
-      }
+      if (qty <= threshold * 0.3) alertStatus = 'Critical';
+      else if (qty <= threshold || inv.isLowStock) alertStatus = 'Low';
 
       return {
         id: inv.id,
@@ -115,13 +108,12 @@ const InventoryAlerts = () => {
         dailyConsumptionRate,
         reorderPoint: Number(reorderPoint.toFixed(1)),
         daysUntilReorder,
-        projectedReorderDate: daysUntilReorder === 999
-          ? 'Sufficient Runway'
-          : projectedReorderDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }),
+        projectedReorderDate: daysUntilReorder === 999 ? 'Sufficient Runway' : projectedReorderDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }),
         isPastReorderDate
       };
     });
 
+    // Sorting logic
     return mergedData.sort((a, b) => {
       if (viewMode === 'Forecasting') return a.daysUntilReorder - b.daysUntilReorder;
       if (a.status === 'Critical' && b.status !== 'Critical') return -1;
@@ -140,6 +132,7 @@ const InventoryAlerts = () => {
 
   const criticalCount = inventoryData.filter(i => i.status === 'Critical').length;
   const reorderCount = inventoryData.filter(i => i.isPastReorderDate).length;
+
   const toBuyList = useMemo(() => {
     return inventoryData
       .filter((item) => item.status === 'Critical' || item.isPastReorderDate)
@@ -181,6 +174,7 @@ const InventoryAlerts = () => {
   return (
     <div className="flex flex-col gap-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
 
+      {/* View Toggle */}
       <div className="flex justify-between items-center bg-white p-2 rounded-xl border border-zinc-200 shadow-sm w-fit">
         <button
           onClick={() => setViewMode('Alerts')}
@@ -196,6 +190,7 @@ const InventoryAlerts = () => {
         </button>
       </div>
 
+      {/* Summary Cards */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
         <div className="stat-card border-rose-200 bg-rose-50/30">
           <p className="stat-card-title !text-rose-500">Critical items</p>
@@ -218,10 +213,7 @@ const InventoryAlerts = () => {
               <button
                 key={f}
                 onClick={() => setFilter(f)}
-                className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-all ${filter === f
-                  ? 'bg-black text-white shadow-sm'
-                  : 'bg-zinc-100 text-zinc-600 hover:bg-zinc-200'
-                  }`}
+                className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-all ${filter === f ? 'bg-black text-white shadow-sm' : 'bg-zinc-100 text-zinc-600 hover:bg-zinc-200'}`}
               >
                 {f}
               </button>
@@ -230,6 +222,7 @@ const InventoryAlerts = () => {
         </div>
       </div>
 
+      {/* Most Used Items */}
       {mostUsedItems.length > 0 && (
         <div className="flex flex-col gap-3">
           <h3 className="font-bold text-sm text-zinc-900 mt-2">Most Used Items (30-Day Velocity)</h3>
@@ -253,6 +246,7 @@ const InventoryAlerts = () => {
         </div>
       )}
 
+      {/* Main Inventory Table */}
       <div className="table-container mt-0">
         <div className="px-6 py-4 border-b border-zinc-100 bg-zinc-50/60 flex items-center justify-between gap-3">
           <div>
@@ -261,6 +255,7 @@ const InventoryAlerts = () => {
           </div>
           <span className="text-[10px] font-bold uppercase tracking-wider text-zinc-500">{filteredData.length} items</span>
         </div>
+
         <div className="overflow-x-auto">
           <table className="w-full border-collapse text-sm">
             <thead>
@@ -327,6 +322,7 @@ const InventoryAlerts = () => {
                   )}
                 </tr>
               ))}
+
               {loading ? (
                 <tr>
                   <td colSpan={viewMode === 'Forecasting' ? 11 : 7} className="py-12 text-center text-zinc-400">
@@ -347,6 +343,7 @@ const InventoryAlerts = () => {
         </div>
       </div>
 
+      {/* Automated To-Buy List */}
       <div className="table-container mt-0">
         <div className="px-6 py-4 border-b border-zinc-100 bg-rose-50/60 flex items-center justify-between gap-3">
           <div>

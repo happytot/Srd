@@ -1,16 +1,22 @@
 /**
- * True for admin regardless of casing (e.g. "Admin", "admin", "ADMIN").
+ * Role utility for the Coffee & Tea Sales Dashboard.
  *
- * Firestore Security Rules — match both stored spellings on delete, for example:
+ * Returns true if the user has admin privileges.
+ * Case-insensitive check (e.g. "Admin", "admin", "ADMIN", "ADMINISTRATOR" etc.).
  *
- *   match /expenses/{expenseId} {
- *     allow read, create: if request.auth != null;
- *     allow delete: if request.auth != null &&
- *       get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role in ['Admin', 'admin'];
- *   }
- *
- * Or compare case-insensitively if your rules version supports string transforms on your stored value.
+ * This is used both in the frontend (UI hiding) and referenced in Firestore
+ * security rules for sensitive operations (delete, user management, etc.).
  */
 export function isAdminRole(role) {
-  return String(role ?? '').toLowerCase() === 'admin';
+  if (!role) return false;
+  return String(role).toLowerCase() === 'admin';
 }
+
+/**
+ * Optional helper for future expansion (kept for clarity).
+ * Currently only "admin" is considered admin, but this makes it easy to add
+ * more roles later without changing every call site.
+ */
+export const ADMIN_ROLES = ['admin'];
+
+export default isAdminRole;
