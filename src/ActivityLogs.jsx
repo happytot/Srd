@@ -19,6 +19,10 @@ const ActivityLogs = ({ currentUser }) => {
   const [customStart, setCustomStart] = useState('');
   const [customEnd, setCustomEnd] = useState('');
 
+  // NEW: Pagination
+  const [currentPage, setCurrentPage] = useState(1);
+  const logsPerPage = 30;
+
   // Fetch Activity Logs
   useEffect(() => {
     if (!isAdminRole(currentUser?.role)) return;
@@ -165,6 +169,16 @@ const ActivityLogs = ({ currentUser }) => {
       salesPerformance: performance
     };
   }, [rawLogs, rawOrders, subsystemFilter, userFilter, actionFilter, dateRange, customStart, customEnd]);
+
+  // Reset to page 1 when filters change
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [subsystemFilter, userFilter, actionFilter, dateRange, customStart, customEnd]);
+
+  // Pagination
+  const totalPages = Math.ceil(filteredLogs.length / logsPerPage);
+  const startIndex = (currentPage - 1) * logsPerPage;
+  const paginatedLogs = filteredLogs.slice(startIndex, startIndex + logsPerPage);
 
   // Live Users (Admin only)
   useEffect(() => {
@@ -314,7 +328,7 @@ const ActivityLogs = ({ currentUser }) => {
         )}
       </div>
 
-      {/* Activity Logs Table */}
+      {/* Activity Logs Table with Pagination */}
       <div className="content-card">
         <div className="table-container">
           <table className="w-full border-collapse text-sm">
@@ -328,7 +342,7 @@ const ActivityLogs = ({ currentUser }) => {
               </tr>
             </thead>
             <tbody className="divide-y divide-zinc-100">
-              {filteredLogs.map((log) => (
+              {paginatedLogs.map((log) => (
                 <tr key={log.id} className="table-row">
                   <td className="table-data-cell text-zinc-500">
                     {log.createdAt ? log.createdAt.toLocaleString('en-US', {
@@ -364,7 +378,7 @@ const ActivityLogs = ({ currentUser }) => {
                 </tr>
               ))}
 
-              {filteredLogs.length === 0 && (
+              {paginatedLogs.length === 0 && (
                 <tr>
                   <td colSpan="5" className="py-10 text-center text-zinc-400">
                     No activity logs found matching the current filters.
@@ -373,6 +387,32 @@ const ActivityLogs = ({ currentUser }) => {
               )}
             </tbody>
           </table>
+        </div>
+
+        {/* Pagination Controls */}
+        <div className="flex items-center justify-between mt-4 px-2 text-xs text-zinc-500">
+          <span>
+            Showing {filteredLogs.length > 0 ? startIndex + 1 : 0} to {Math.min(startIndex + logsPerPage, filteredLogs.length)} of {filteredLogs.length} logs
+          </span>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+              disabled={currentPage === 1}
+              className="px-3 py-1 border border-zinc-200 rounded hover:bg-zinc-100 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              Previous
+            </button>
+            <span className="px-3 py-1 bg-black text-white rounded">
+              Page {currentPage} of {totalPages || 1}
+            </span>
+            <button
+              onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+              disabled={currentPage === totalPages || totalPages === 0}
+              className="px-3 py-1 border border-zinc-200 rounded hover:bg-zinc-100 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              Next
+            </button>
+          </div>
         </div>
       </div>
     </div>
