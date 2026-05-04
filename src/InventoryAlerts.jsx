@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { collection, query, onSnapshot, where, doc, updateDoc, Timestamp } from 'firebase/firestore';
+import { Loader2, Package } from 'lucide-react';
 import { db } from './firebase';
 
 const InventoryAlerts = () => {
@@ -326,14 +327,16 @@ const InventoryAlerts = () => {
               {loading ? (
                 <tr>
                   <td colSpan={viewMode === 'Forecasting' ? 11 : 7} className="py-12 text-center text-zinc-400">
-                    <div className="animate-spin text-3xl mb-2 inline-block">⏳</div>
+                    <Loader2 className="animate-spin mb-2 inline-block" size={32} />
                     <p>Crunching supply chain data...</p>
                   </td>
                 </tr>
               ) : filteredData.length === 0 ? (
                 <tr>
                   <td colSpan={viewMode === 'Forecasting' ? 11 : 7} className="py-12 text-center text-zinc-400">
-                    <div className="text-3xl mb-2">📦</div>
+                    <div className="flex justify-center mb-2">
+                      <Package size={48} className="text-zinc-300" />
+                    </div>
                     <p>No inventory items found for the selected filter.</p>
                   </td>
                 </tr>

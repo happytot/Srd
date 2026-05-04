@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { collection, query, getDocs, orderBy, addDoc, serverTimestamp, deleteDoc, doc } from 'firebase/firestore';
+import { FileSpreadsheet, FileText, Loader2 } from 'lucide-react';
 import { db } from './firebase';
 import ExportEngine from './utils/ExportEngine';
 import {
@@ -426,11 +427,11 @@ const SalesReport = ({ globalDateRange, globalCustomStart, globalCustomEnd, curr
         </div>
 
         <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto">
-          <button onClick={handleExportExcel} className="flex-1 sm:flex-none px-3 py-2 bg-white border border-emerald-200 rounded-lg text-xs font-bold text-emerald-700 shadow-sm hover:bg-emerald-50 transition-all active:scale-[0.98]">
-            <span className="mr-1.5">📊</span> Excel
+          <button onClick={handleExportExcel} className="flex-1 sm:flex-none px-3 py-2 bg-white border border-emerald-200 rounded-lg text-xs font-bold text-emerald-700 shadow-sm hover:bg-emerald-50 transition-all active:scale-[0.98] flex items-center justify-center">
+            <FileSpreadsheet size={14} className="mr-1.5" /> Excel
           </button>
-          <button onClick={handleExportPDF} className="flex-1 sm:flex-none px-3 py-2 bg-white border border-rose-200 rounded-lg text-xs font-bold text-rose-700 shadow-sm hover:bg-rose-50 transition-all active:scale-[0.98]">
-            <span className="mr-1.5">📄</span> PDF
+          <button onClick={handleExportPDF} className="flex-1 sm:flex-none px-3 py-2 bg-white border border-rose-200 rounded-lg text-xs font-bold text-rose-700 shadow-sm hover:bg-rose-50 transition-all active:scale-[0.98] flex items-center justify-center">
+            <FileText size={14} className="mr-1.5" /> PDF
           </button>
         </div>
       </div>
@@ -683,14 +684,16 @@ const SalesReport = ({ globalDateRange, globalCustomStart, globalCustomEnd, curr
               {loading ? (
                 <tr>
                   <td colSpan="7" className="py-12 text-center text-zinc-400">
-                    <div className="animate-spin text-3xl mb-2 inline-block">⏳</div>
+                    <Loader2 className="animate-spin mb-2 inline-block" size={32} />
                     <p>Loading transactions...</p>
                   </td>
                 </tr>
               ) : paginatedData.length === 0 ? (
                 <tr>
                   <td colSpan="7" className="py-12 text-center text-zinc-400">
-                    <div className="text-3xl mb-2">📊</div>
+                    <div className="flex justify-center mb-2">
+                      <FileSpreadsheet size={48} className="text-zinc-300" />
+                    </div>
                     <p>No transactions found for the selected filters.</p>
                   </td>
                 </tr>

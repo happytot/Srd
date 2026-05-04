@@ -5,6 +5,12 @@ import { isAdminRole } from '../utils/roles';
 
 const LiveUsersPanel = ({ currentUser }) => {
   const [liveUsers, setLiveUsers] = useState([]);
+  const [now, setNow] = useState(Date.now());
+
+  useEffect(() => {
+    const interval = setInterval(() => setNow(Date.now()), 30000);
+    return () => clearInterval(interval);
+  }, []);
 
   useEffect(() => {
     if (!isAdminRole(currentUser?.role)) return;
@@ -57,6 +63,12 @@ const LiveUsersPanel = ({ currentUser }) => {
 
   if (!isAdminRole(currentUser?.role)) return null;
 
+  // Filter out ghost sessions (last seen > 3 minutes ago)
+  const activeUsers = liveUsers.filter(user => {
+    if (!user.lastSeenAt) return false;
+    return (now - user.lastSeenAt.getTime()) <= 3 * 60 * 1000;
+  });
+
   return (
     <div className="content-card mb-6">
       <div className="flex items-center justify-between mb-4">
@@ -67,7 +79,7 @@ const LiveUsersPanel = ({ currentUser }) => {
           </p>
         </div>
         <span className="text-[10px] font-bold uppercase tracking-wider text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded">
-          {liveUsers.length} online
+          {activeUsers.length} online
         </span>
       </div>
 
@@ -83,7 +95,7 @@ const LiveUsersPanel = ({ currentUser }) => {
               </tr>
             </thead>
             <tbody className="divide-y divide-zinc-100">
-              {liveUsers.map((user) => (
+              {activeUsers.map((user) => (
                 <tr key={user.id} className="table-row">
                   <td className="table-data-cell">
                     <p className="font-bold text-zinc-800">{user.name || user.email || 'Unknown User'}</p>
@@ -114,7 +126,7 @@ const LiveUsersPanel = ({ currentUser }) => {
                 </tr>
               ))}
 
-              {liveUsers.length === 0 && (
+              {activeUsers.length === 0 && (
                 <tr>
                   <td colSpan="4" className="py-10 text-center text-zinc-400">
                     No users currently online.

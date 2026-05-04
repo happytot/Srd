@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { collection, query, getDocs, orderBy } from 'firebase/firestore';
 import { db } from './firebase';
+import { Link, Loader2, Download, TrendingUp } from 'lucide-react';
 import {
   LineChart, Line, AreaChart, Area, XAxis, YAxis, CartesianGrid, 
   Tooltip as RechartsTooltip, ResponsiveContainer, PieChart, Pie, Cell, Legend
@@ -230,14 +231,14 @@ const SalesAnalytics = ({ globalDateRange, globalCustomStart, globalCustomEnd })
           </select>
         </div>
 
-        <div className="px-4 py-2 bg-zinc-50 border border-zinc-200 rounded-lg text-sm font-bold text-zinc-400 shadow-sm cursor-not-allowed hidden md:block">
-          <span className="mr-2">🔗</span> Synced
+        <div className="px-4 py-2 bg-zinc-50 border border-zinc-200 rounded-lg text-sm font-bold text-zinc-400 shadow-sm cursor-not-allowed hidden md:block flex items-center justify-center">
+          <Link size={14} className="inline mr-1.5" /> Synced
         </div>
       </div>
 
       {loading ? (
         <div className="flex justify-center items-center py-20 text-zinc-400 bg-white rounded-xl border border-zinc-200 shadow-sm">
-          <div className="animate-spin text-3xl mb-2 mr-3 inline-block">⏳</div>
+          <Loader2 className="animate-spin mb-2 mr-3 inline-block" size={32} />
           <p>Processing Analytics...</p>
         </div>
       ) : (
@@ -288,9 +289,9 @@ const SalesAnalytics = ({ globalDateRange, globalCustomStart, globalCustomEnd })
                 </div>
                 <button 
                   onClick={() => ExportEngine.exportToImage('analytics-area-chart', 'Sales_Trend')}
-                  className="px-2 py-1 text-[10px] font-bold text-zinc-500 bg-zinc-100 hover:bg-zinc-200 rounded transition-colors"
+                  className="px-2 py-1 text-[10px] font-bold text-zinc-500 bg-zinc-100 hover:bg-zinc-200 rounded transition-colors flex items-center justify-center"
                 >
-                  📸 Export PNG
+                  <Download size={14} className="mr-1.5" /> Export PNG
                 </button>
               </div>
 
@@ -327,7 +328,7 @@ const SalesAnalytics = ({ globalDateRange, globalCustomStart, globalCustomEnd })
                   </ResponsiveContainer>
                 ) : (
                   <div className="w-full h-full flex flex-col items-center justify-center text-zinc-400">
-                    <span className="text-3xl mb-2">📈</span>
+                    <TrendingUp size={48} className="mb-2 text-zinc-300" />
                     <p className="text-sm">No trend data available for this range</p>
                   </div>
                 )}
@@ -343,9 +344,9 @@ const SalesAnalytics = ({ globalDateRange, globalCustomStart, globalCustomEnd })
                 </div>
                 <button 
                   onClick={() => ExportEngine.exportToImage('analytics-pie-chart', 'Category_Breakdown')}
-                  className="px-2 py-1 text-[10px] font-bold text-zinc-500 bg-zinc-100 hover:bg-zinc-200 rounded transition-colors"
+                  className="px-2 py-1 text-[10px] font-bold text-zinc-500 bg-zinc-100 hover:bg-zinc-200 rounded transition-colors flex items-center justify-center"
                 >
-                  📸 Export
+                  <Download size={14} className="mr-1.5" /> Export
                 </button>
               </div>
 

@@ -4,7 +4,7 @@
 }
 
 .sidebar {
-  @apply hidden md:flex md:fixed md:inset-y-0 md:left-0 flex-col w-52 xl:w-64 bg-white border-r border-zinc-200 p-4 xl:p-6 transition-all duration-300;
+  @apply hidden md:flex md:fixed md:inset-y-0 md:left-0 z-50 flex-col w-52 xl:w-64 bg-white border-r border-zinc-200 p-4 xl:p-6 transition-all duration-300;
 }
 
 .main-content {

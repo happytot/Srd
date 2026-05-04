@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { collection, query, getDocs, orderBy } from 'firebase/firestore';
 import { db } from './firebase';
+import { Loader2, Download } from 'lucide-react';
 import {
   ComposedChart,
   Line,
@@ -183,7 +184,7 @@ const SalesForecasting = () => {
   if (loading) {
     return (
       <div className="content-card flex justify-center items-center py-20 text-zinc-400">
-        <div className="animate-spin text-3xl mb-2 mr-3 inline-block">⏳</div>
+        <Loader2 className="animate-spin mb-2 mr-3 inline-block" size={32} />
         <p>Running forecasting model...</p>
       </div>
     );
@@ -248,9 +249,9 @@ const SalesForecasting = () => {
             </div>
             <button
               onClick={() => ExportEngine.exportToImage('forecast-chart', 'Sales_Forecast')}
-              className="px-3 py-1 text-xs font-bold text-zinc-500 hover:bg-zinc-100 rounded-lg transition-colors"
+              className="px-3 py-1 text-xs font-bold text-zinc-500 hover:bg-zinc-100 rounded-lg transition-colors flex items-center justify-center"
             >
-              📸 Export
+              <Download size={14} className="mr-1.5" /> Export
             </button>
           </div>
 

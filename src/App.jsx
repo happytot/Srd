@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { auth, db } from './firebase';
+import { Loader2 } from 'lucide-react';
 import { doc, getDoc, collection, query, where, orderBy, onSnapshot } from 'firebase/firestore';
 import { onAuthStateChanged } from 'firebase/auth';
 
@@ -292,7 +293,7 @@ const Overview = ({ globalDateRange, globalCustomStart, globalCustomEnd }) => {
   if (loading) {
     return (
       <div className="flex justify-center items-center py-20 text-zinc-400">
-        <div className="animate-spin text-3xl mb-2 mr-3 inline-block">⏳</div>
+        <Loader2 className="animate-spin mb-2 mr-3 inline-block" size={32} />
         <p>Crunching the numbers...</p>
       </div>
     );
@@ -474,7 +475,7 @@ function App() {
 
         beatInterval = setInterval(() => {
           heartbeatSession(sessionId).catch(err => console.error('Heartbeat failed:', err));
-        }, 45000);
+        }, 60000);
       } catch (err) {
         console.error('Session start failed:', err);
       }
@@ -522,7 +523,7 @@ function App() {
         <header className="flex flex-col xl:flex-row justify-between items-start xl:items-center gap-4 mb-8">
           <h2 className="text-xl font-bold tracking-tight">{activeTab}</h2>
           <div className="flex flex-wrap items-center gap-4 w-full xl:w-auto">
-            {activeTab !== 'User Management' && activeTab !== 'Inventory Alerts' && (
+            {['Overview', 'Sales Analytics', 'Sales Reports'].includes(activeTab) && (
               <GlobalDateFilter
                 globalDateRange={globalDateRange}
                 setGlobalDateRange={setGlobalDateRange}

@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { db } from './firebase';
+import { Loader2 } from 'lucide-react';
 import { collection, query, where, orderBy, onSnapshot } from 'firebase/firestore';
 import { isAdminRole } from './utils/roles';
 import LiveUsersPanel from './components/LiveUsersPanel';
@@ -7,9 +8,10 @@ import LiveUsersPanel from './components/LiveUsersPanel';
 const ActivityLogs = ({ currentUser }) => {
   const [rawLogs, setRawLogs] = useState([]);
   const [rawOrders, setRawOrders] = useState([]);
+  const [rawInventoryLogs, setRawInventoryLogs] = useState([]);
   const [loadingLogs, setLoadingLogs] = useState(true);
   const [loadingOrders, setLoadingOrders] = useState(true);
-  const [onlineSessions, setOnlineSessions] = useState([]);
+  const [loadingInventory, setLoadingInventory] = useState(true);
 
   // Filters
   const [subsystemFilter, setSubsystemFilter] = useState('All');
@@ -72,9 +74,46 @@ const ActivityLogs = ({ currentUser }) => {
     return () => unsubscribe();
   }, [currentUser]);
 
+  // Fetch Inventory Logs
+  useEffect(() => {
+    if (!isAdminRole(currentUser?.role)) return;
+
+    const q = query(collection(db, 'inventoryLogs'));
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      const data = snapshot.docs.map(doc => {
+        const log = doc.data();
+        
+        // Clean up meta object to only include fields that exist
+        const meta = {};
+        if (log.itemName || log.item) meta.item = log.itemName || log.item;
+        if (log.quantity || log.qty) meta.quantity = log.quantity || log.qty;
+        if (log.details || log.description) meta.details = log.details || log.description;
+        if (log.status) meta.status = log.status;
+
+        return {
+          id: doc.id,
+          uid: log.uid || log.userEmail || log.userId || 'System',
+          name: log.name || log.userName || log.userEmail || 'Inventory User',
+          role: log.role || 'staff',
+          subsystem: 'Inventory',
+          action: log.action || 'INVENTORY_UPDATE',
+          meta: Object.keys(meta).length > 0 ? meta : { info: 'Inventory Action' },
+          createdAt: log.createdAt?.toDate?.() || log.timestamp?.toDate?.() || new Date()
+        };
+      });
+      setRawInventoryLogs(data);
+      setLoadingInventory(false);
+    }, (error) => {
+      console.error("Error fetching inventory logs:", error);
+      setLoadingInventory(false);
+    });
+
+    return () => unsubscribe();
+  }, [currentUser]);
+
   // Combined & Filtered Logs + Performance
   const { filteredLogs, availableSubsystems, availableActions, availableUsers, salesPerformance } = useMemo(() => {
-    let combined = [...rawLogs, ...rawOrders];
+    let combined = [...rawLogs, ...rawOrders, ...rawInventoryLogs];
 
     // Sort by newest first
     combined.sort((a, b) => {
@@ -168,7 +207,7 @@ const ActivityLogs = ({ currentUser }) => {
       availableUsers: users,
       salesPerformance: performance
     };
-  }, [rawLogs, rawOrders, subsystemFilter, userFilter, actionFilter, dateRange, customStart, customEnd]);
+  }, [rawLogs, rawOrders, rawInventoryLogs, subsystemFilter, userFilter, actionFilter, dateRange, customStart, customEnd]);
 
   // Reset to page 1 when filters change
   useEffect(() => {
@@ -180,35 +219,15 @@ const ActivityLogs = ({ currentUser }) => {
   const startIndex = (currentPage - 1) * logsPerPage;
   const paginatedLogs = filteredLogs.slice(startIndex, startIndex + logsPerPage);
 
-  // Live Users (Admin only)
-  useEffect(() => {
-    if (!isAdminRole(currentUser?.role)) {
-      setOnlineSessions([]);
-      return;
-    }
-
-    const q = query(collection(db, 'user_sessions'), where('status', '==', 'online'));
-    const unsubscribe = onSnapshot(q, (snapshot) => {
-      const sessions = snapshot.docs.map(docSnap => ({
-        id: docSnap.id,
-        ...docSnap.data(),
-        lastSeenAt: docSnap.data().lastSeenAt?.toDate?.() ?? null
-      }));
-      sessions.sort((a, b) => (b.lastSeenAt?.getTime?.() || 0) - (a.lastSeenAt?.getTime?.() || 0));
-      setOnlineSessions(sessions);
-    });
-
-    return () => unsubscribe();
-  }, [currentUser]);
 
   if (!isAdminRole(currentUser?.role)) {
     return <div className="text-center py-20 text-zinc-400">Access denied. Admin role required.</div>;
   }
 
-  if (loadingLogs || loadingOrders) {
+  if (loadingLogs || loadingOrders || loadingInventory) {
     return (
       <div className="flex justify-center items-center py-20 text-zinc-400">
-        <div className="animate-spin text-3xl mb-2 mr-3 inline-block">⏳</div>
+        <Loader2 className="animate-spin mb-2 mr-3 inline-block" size={32} />
         <p>Loading activity logs...</p>
       </div>
     );
@@ -216,7 +235,7 @@ const ActivityLogs = ({ currentUser }) => {
 
   return (
     <div className="space-y-6">
-      <LiveUsersPanel currentUser={currentUser} sessions={onlineSessions} />
+      <LiveUsersPanel currentUser={currentUser} />
 
       {/* Filters */}
       <div className="content-card">
