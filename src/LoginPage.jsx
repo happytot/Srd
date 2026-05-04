@@ -75,21 +75,20 @@ const LoginPage = ({ onLogin }) => {
   return (
     <div className="min-h-screen bg-zinc-50 flex flex-col justify-center py-12 sm:px-6 lg:px-8 font-sans">
       <div className="sm:mx-auto sm:w-full sm:max-w-md">
-        <div className="flex justify-center">
-          <div className="w-36 h-36 rounded-xl overflow-hidden flex items-center justify-center">
-            <img src="/assets/coffeeandtealogo.png" alt="Coffee & Tea Logo" className="w-full h-full object-contain" />
+        <div className="bg-white py-10 px-4 shadow-xl shadow-black/5 sm:rounded-3xl sm:px-10 border border-zinc-100">
+          
+          <div className="flex justify-center mb-6">
+            <div className="w-32 h-32 rounded-2xl overflow-hidden flex items-center justify-center">
+              <img src="/assets/coffeeandtealogo.png" alt="Coffee & Tea Logo" className="w-full h-full object-contain" />
+            </div>
           </div>
-        </div>
-        <h2 className="mt-6 text-center text-3xl font-extrabold text-zinc-900 tracking-tight">
-          Coffee & Tea Connection
-        </h2>
-        <p className="mt-2 text-center text-sm text-zinc-500">
-          Sign in to access your sales dashboard
-        </p>
-      </div>
+          <h2 className="text-center text-2xl font-extrabold text-zinc-900 tracking-tight mb-2">
+            Coffee & Tea Connection
+          </h2>
+          <p className="text-center text-sm text-zinc-500 mb-8">
+            Sign in to access your sales dashboard
+          </p>
 
-      <div className="mt-8 sm:mx-auto sm:w-full sm:max-w-md">
-        <div className="bg-white py-8 px-4 shadow-xl shadow-black/5 sm:rounded-2xl sm:px-10 border border-zinc-100">
           <form className="space-y-6" onSubmit={handleLogin}>
             {error && (
               <div className="p-3 bg-red-50 text-red-600 border border-red-200 rounded-xl text-sm font-medium">
