@@ -122,7 +122,14 @@ const SalesReport = ({ globalDateRange, globalCustomStart, globalCustomEnd, curr
 
           return {
             id: doc.id,
-            date: order.createdAt ? order.createdAt.toDate().toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : 'N/A',
+            transactionId: order.transactionNumber || order.transactionId || doc.id,   // ← Main Fix
+            date: order.createdAt ? order.createdAt.toDate().toLocaleDateString('en-US', {
+              year: 'numeric',
+              month: 'short',
+              day: 'numeric',
+              hour: '2-digit',
+              minute: '2-digit'
+            }) : 'N/A',
             timestamp: order.createdAt ? order.createdAt.toDate() : new Date(0),
             product: order.items ? order.items.map(item => `${item.quantity || 1}x ${item.name}`).join(', ') : 'Unknown',
             category: uniqueCategories.length === 1 ? uniqueCategories[0] : (uniqueCategories.length > 1 ? 'Multiple' : 'Unknown'),
@@ -131,7 +138,7 @@ const SalesReport = ({ globalDateRange, globalCustomStart, globalCustomEnd, curr
             originalTotalAmount: Number(order.totalAmount) || 0,
             originalItems: order.items || [],
             status: 'Completed',
-            customer: order.cashierName || 'Guest',
+            customer: order.baristaName || order.cashierName || 'Guest',
             paymentMethod: order.paymentMethod || 'Cash',
             gcashRefNumber: order.gcashRefNumber || ''
           };
@@ -243,82 +250,59 @@ const SalesReport = ({ globalDateRange, globalCustomStart, globalCustomEnd, curr
 
   const utilityWithinTarget = utilityExpensePercentOfSales <= Number(utilityTargetPct || 0);
 
-  const handleExpenseFormSubmit = (e) => {
+  const handleExpenseFormSubmit = async (e) => {
     e.preventDefault();
     setExpenseFormError('');
+
     if (!currentUser?.uid) {
       setExpenseFormError('You must be signed in to add an expense.');
       return;
     }
+
     const raw = parseFloat(String(expenseAmount).replace(/,/g, ''));
     if (!Number.isFinite(raw) || raw <= 0) {
       setExpenseFormError('Enter a valid expense amount greater than zero.');
       return;
     }
-    setPendingAddExpense({
-      amount: raw,
-      note: expenseNote.trim() || null,
-      expenseType,
-      expenseSubType: expenseSubType.trim() || null
-    });
-  };
 
-  const closeAddExpenseModal = () => {
-    if (!expenseSaving) {
-      setPendingAddExpense(null);
-      setExpenseFormError('');
-    }
-  };
-
-  const confirmAddExpense = async () => {
-    if (!pendingAddExpense || !currentUser?.uid) return;
     setExpenseSaving(true);
-    setExpenseFormError('');
+
     try {
       await addDoc(collection(db, 'expenses'), {
-        amount: pendingAddExpense.amount,
-        description: pendingAddExpense.note,
-        expenseType: pendingAddExpense.expenseType || 'Operational',
-        expenseSubType: pendingAddExpense.expenseSubType || null,
+        amount: raw,
+        description: expenseNote.trim() || null,
+        expenseType: expenseType || 'Operational',
+        expenseSubType: expenseSubType.trim() || null,
         createdAt: serverTimestamp(),
         createdByUid: currentUser.uid,
         createdByName: currentUser.name || currentUser.email || 'Unknown',
         createdByEmail: currentUser.email || null
       });
+
       setExpenseAmount('');
       setExpenseNote('');
-      setExpenseType('Operational');
       setExpenseSubType('');
-      setPendingAddExpense(null);
       await loadExpenses();
+
+      alert("✅ Expense added successfully!");
     } catch (err) {
       console.error(err);
-      setExpenseFormError('Could not save expense. Confirm Firestore rules allow create on `expenses`.');
+      setExpenseFormError('Could not save expense. Check Firestore rules.');
     } finally {
       setExpenseSaving(false);
-    }
-  };
-
-  const closeDeleteExpenseModal = () => {
-    if (!deleteSaving) {
-      setPendingDeleteExpense(null);
-      setDeleteModalError('');
     }
   };
 
   const confirmDeleteExpense = async () => {
     if (!pendingDeleteExpense?.id) return;
     setDeleteSaving(true);
-    setDeleteModalError('');
     try {
       await deleteDoc(doc(db, 'expenses', pendingDeleteExpense.id));
       setPendingDeleteExpense(null);
       await loadExpenses();
     } catch (err) {
       console.error(err);
-      setDeleteModalError(
-        'Could not delete. Ensure you are an Admin and Firestore rules allow delete on `expenses` for admins only.'
-      );
+      setDeleteModalError('Could not delete expense.');
     } finally {
       setDeleteSaving(false);
     }
@@ -362,13 +346,12 @@ const SalesReport = ({ globalDateRange, globalCustomStart, globalCustomEnd, curr
 
   const generateExportData = () => {
     return filteredData.map(row => ({
-      'Transaction ID': row.id,
+      'Transaction ID': row.transactionId || row.id,   // Full ID
       'Date': row.date,
-      'Cashier': row.customer,
+      'Barista': row.customer,
       'Items': row.product,
       'Category': row.category,
-      'Amount': `₱${Number(row.amount).toLocaleString('en-US', { minimumFractionDigits: 2 })}`,
-      'Payment Method': row.paymentMethod + (row.gcashRefNumber ? ` (Ref: ${row.gcashRefNumber})` : ''),
+      'Amount': Number(row.amount).toLocaleString('en-US', { minimumFractionDigits: 2 }), 'Payment Method': row.paymentMethod + (row.gcashRefNumber ? ` (Ref: ${row.gcashRefNumber})` : ''),
       'Status': row.status
     }));
   };
@@ -382,7 +365,34 @@ const SalesReport = ({ globalDateRange, globalCustomStart, globalCustomEnd, curr
   const handleExportPDF = () => {
     const exportData = generateExportData();
     if (exportData.length === 0) return;
-    ExportEngine.exportToPDF(exportData, getFileNamePrefix(), 'Coffee and Tea Connection', getReportName());
+
+    let reportSubtitle = `${globalDateRange} Sales Report`;
+
+    if (globalDateRange === 'Custom' && globalCustomStart && globalCustomEnd) {
+      const start = new Date(globalCustomStart).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+      const end = new Date(globalCustomEnd).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+      reportSubtitle = `Custom Sales Report (${start} - ${end})`;
+    }
+    else if (globalDateRange === 'Monthly' || globalDateRange === 'Month to Date') {
+      const now = new Date();
+      const monthName = now.toLocaleString('default', { month: 'long' });
+      const year = now.getFullYear();
+      reportSubtitle = `Monthly Sales Report (${monthName} ${year})`;
+    }
+    else if (globalDateRange === 'Weekly' || globalDateRange === 'Last 7 Days') {
+      const end = new Date();
+      const start = new Date();
+      start.setDate(start.getDate() - 6);
+      reportSubtitle = `Weekly Sales Report (${start.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} - ${end.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })})`;
+    }
+
+    ExportEngine.exportToPDF(
+      exportData,
+      getFileNamePrefix(),
+      'Coffee & Tea Connection',
+      reportSubtitle,     // This will be used as the main subtitle
+      ''                  // Empty dateRangeInfo to avoid duplication
+    );
   };
 
   // Pagination handlers
@@ -396,6 +406,17 @@ const SalesReport = ({ globalDateRange, globalCustomStart, globalCustomEnd, curr
 
   return (
     <div id="sales-report-content" className="flex flex-col gap-6 animate-in fade-in slide-in-from-bottom-4 duration-500 bg-zinc-50 pb-8">
+
+      {/* NEW: Custom Date Range Display */}
+      <div className="flex justify-between items-center bg-white p-4 rounded-xl border border-zinc-200">
+        <h1 className="text-3xl font-bold text-zinc-900">Sales Report</h1>
+
+        {globalDateRange === 'Custom' && globalCustomStart && globalCustomEnd && (
+          <div className="bg-emerald-50 border border-emerald-200 text-emerald-700 px-5 py-2.5 rounded-xl text-sm font-medium">
+            📅 Coverage: {new Date(globalCustomStart).toLocaleDateString()} — {new Date(globalCustomEnd).toLocaleDateString()}
+          </div>
+        )}
+      </div>
 
       {/* Filters and Actions */}
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 bg-white p-4 rounded-xl border border-zinc-200 shadow-sm">
@@ -447,12 +468,14 @@ const SalesReport = ({ globalDateRange, globalCustomStart, globalCustomEnd, curr
           <p className="stat-card-value">{filteredData.length}</p>
         </div>
         <div className="stat-card">
-          <p className="stat-card-title">Average Transaction</p>
+          <p className="stat-card-title">Average Transaction (Daily)</p>
           <p className="stat-card-value">₱{averageTransaction.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
         </div>
       </div>
 
+
       {/* Cash flow & reconciliation */}
+
       <div className="bg-white p-5 rounded-xl border border-zinc-200 shadow-sm space-y-5">
         <div>
           <h3 className="font-bold text-sm text-zinc-900">{'Cash flow & reconciliation'}</h3>
@@ -649,7 +672,7 @@ const SalesReport = ({ globalDateRange, globalCustomStart, globalCustomEnd, curr
               <tr>
                 <th className="table-head-cell">Transaction ID</th>
                 <th className="table-head-cell">Date</th>
-                <th className="table-head-cell">Cashier</th>
+                <th className="table-head-cell">Barista</th>
                 <th className="table-head-cell">Items</th>
                 <th className="table-head-cell">Amount</th>
                 <th className="table-head-cell">Payment Method</th>
@@ -659,16 +682,18 @@ const SalesReport = ({ globalDateRange, globalCustomStart, globalCustomEnd, curr
             <tbody className="divide-y divide-zinc-100">
               {paginatedData.map((row) => (
                 <tr key={row.id} className="table-row">
-                  <td className="table-data-cell font-mono text-zinc-500" title={row.id}>{row.id.substring(0, 8)}...</td>
+                  <td className="table-data-cell font-mono text-zinc-500 break-all" title={row.transactionId || row.id}>
+                    {row.transactionId || row.id}
+                  </td>
                   <td className="table-data-cell text-zinc-600">{row.date}</td>
                   <td className="table-data-cell font-medium">{row.customer}</td>
                   <td className="table-data-cell">
-                    <div className="max-w-[200px]">
+                    <div className="max-w-[280px]">
                       <p className="font-bold truncate" title={row.product}>{row.product}</p>
                       <p className="text-[10px] text-zinc-400 uppercase tracking-wider truncate" title={row.category}>{row.category}</p>
                     </div>
                   </td>
-                  <td className="table-data-cell font-bold">₱{Number(row.amount).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                  <td className="table-data-cell font-bold">{formatPeso(row.amount)}</td>
                   <td className="table-data-cell">
                     {getPaymentBadge(row.paymentMethod)}
                     {row.gcashRefNumber && <span className="text-[9px] text-zinc-400 ml-2">REF: {row.gcashRefNumber}</span>}

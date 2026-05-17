@@ -51,18 +51,20 @@ const ActivityLogs = ({ currentUser }) => {
     const unsubscribe = onSnapshot(q, (snapshot) => {
       const data = snapshot.docs.map(doc => {
         const order = doc.data();
+        const baristaName = order.baristaName || order.cashierName || 'Guest';
+
         return {
           id: doc.id,
-          uid: order.cashierName || 'Guest',
-          name: order.cashierName || 'Guest',
-          role: 'cashier',
+          uid: baristaName,
+          name: baristaName,                    // ← Fixed
+          role: 'barista',                      // ← Changed to barista
           subsystem: 'POS',
           action: 'PROCESS_SALE',
           meta: {
             amount: order.totalAmount,
             payment: order.paymentMethod,
             items: order.items?.length || 0,
-            transaction: order.transactionNumber || ''
+            transaction: order.transactionNumber || order.transactionId || ''
           },
           createdAt: order.createdAt?.toDate?.() ?? null
         };
@@ -82,7 +84,7 @@ const ActivityLogs = ({ currentUser }) => {
     const unsubscribe = onSnapshot(q, (snapshot) => {
       const data = snapshot.docs.map(doc => {
         const log = doc.data();
-        
+
         // Clean up meta object to only include fields that exist
         const meta = {};
         if (log.itemName || log.item) meta.item = log.itemName || log.item;
