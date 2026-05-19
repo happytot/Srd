@@ -461,36 +461,46 @@ function App() {
     return () => unsubscribe();
   }, []);
 
-  // User Session Management
-  useEffect(() => {
-    if (!user?.uid) return;
+  // User Session Management + Auto Logout on Tab Close
+useEffect(() => {
+  if (!user?.uid) return;
 
-    let sessionId = '';
-    let beatInterval = null;
+  let sessionId = null;
+  let beatInterval = null;
 
-    const beginSession = async () => {
-      try {
-        sessionId = await startUserSession(user);
-        await logUserAction(user, 'LOGIN', { subsystem: 'SRD' });
+  const beginSession = async () => {
+    try {
+      sessionId = await startUserSession(user);
 
-        beatInterval = setInterval(() => {
-          heartbeatSession(sessionId).catch(err => console.error('Heartbeat failed:', err));
-        }, 60000);
-      } catch (err) {
-        console.error('Session start failed:', err);
-      }
-    };
+      beatInterval = setInterval(() => {
+        if (sessionId) heartbeatSession(sessionId);
+      }, 45000); // every 45 seconds
+    } catch (err) {
+      console.error('Session start failed:', err);
+    }
+  };
 
-    beginSession();
+  beginSession();
 
-    return () => {
-      if (beatInterval) clearInterval(beatInterval);
-      if (sessionId) {
-        endUserSession(sessionId).catch(err => console.error('End session failed:', err));
-        logUserAction(user, 'LOGOUT', { subsystem: 'SRD' }).catch(err => console.error('Logout log failed:', err));
-      }
-    };
-  }, [user]);
+  // Auto logout when user closes tab / browser
+  const handleBeforeUnload = () => {
+    if (sessionId && user) {
+      endUserSession(sessionId, user);   // Fire and forget
+    }
+  };
+
+  window.addEventListener('beforeunload', handleBeforeUnload);
+
+  return () => {
+    window.removeEventListener('beforeunload', handleBeforeUnload);
+    
+    if (beatInterval) clearInterval(beatInterval);
+    
+    if (sessionId && user) {
+      endUserSession(sessionId, user);
+    }
+  };
+}, [user]);
 
   if (isAuthLoading) {
     return (

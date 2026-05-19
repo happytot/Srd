@@ -10,33 +10,46 @@ class ExportEngine {
   /**
    * Export to Excel (.xlsx)
    */
-  static exportToExcel(data, fileNamePrefix = 'Export', titleName = '', subtitle = '') {
+  static exportToExcel(data, fileNamePrefix = 'Export', titleName = '', subtitle = '', category = '', discount = '') {
     if (!data || !Array.isArray(data) || data.length === 0) {
       console.warn('ExportEngine: No data for Excel export');
       return;
     }
 
     const dateStr = new Date().toISOString().split('T')[0];
-    const fileName = `${fileNamePrefix}_${dateStr}.xlsx`;
+    let finalFileName = fileNamePrefix;
+
+    if (category && category !== 'All Categories') {
+      finalFileName += `_${category.replace(/\s+/g, '_')}`;
+    }
+    if (discount && discount !== 'All Transactions') {
+      finalFileName += `_${discount.replace(/\s+/g, '_')}`;
+    }
+    finalFileName += `_${dateStr}.xlsx`;
 
     const worksheet = utils.json_to_sheet([]);
     let row = 0;
 
     if (titleName) utils.sheet_add_aoa(worksheet, [[titleName]], { origin: `A${++row}` });
-    if (subtitle) utils.sheet_add_aoa(worksheet, [[subtitle]], { origin: `A${++row}` });
+    
+    let finalSubtitle = subtitle;
+    if (category && category !== 'All Categories') finalSubtitle += ` - ${category}`;
+    if (discount && discount !== 'All Transactions') finalSubtitle += ` - ${discount}`;
+    
+    if (finalSubtitle) utils.sheet_add_aoa(worksheet, [[finalSubtitle]], { origin: `A${++row}` });
     if (row > 0) utils.sheet_add_aoa(worksheet, [[]], { origin: `A${++row}` });
 
     utils.sheet_add_json(worksheet, data, { origin: `A${row + 1}`, skipHeader: false });
 
     const workbook = utils.book_new();
     utils.book_append_sheet(workbook, worksheet, 'Report');
-    writeFile(workbook, fileName);
+    writeFile(workbook, finalFileName);
   }
 
   /**
-   * Export to PDF - Clean Numbers + Better Layout
+   * Export to PDF
    */
-  static async exportToPDF(data, fileNamePrefix = 'Sales_Report', titleName = 'Coffee & Tea Connection', subtitle = 'Sales Report', dateRangeInfo = '') {
+  static async exportToPDF(data, fileNamePrefix = 'Sales_Report', titleName = 'Coffee & Tea Connection', subtitle = 'Sales Report', dateRangeInfo = '', category = '', discount = '') {
     if (!data || !Array.isArray(data) || data.length === 0) {
       console.warn('ExportEngine: No data for PDF export');
       return;
@@ -53,11 +66,15 @@ class ExportEngine {
       pdf.text(titleName, margin, y);
       y += 9;
 
-      // Subtitle
+      // Subtitle with Category & Discount
+      let finalSubtitle = subtitle;
+      if (category && category !== 'All Categories') finalSubtitle += ` - ${category}`;
+      if (discount && discount !== 'All Transactions') finalSubtitle += ` - ${discount}`;
+
       pdf.setFontSize(12);
       pdf.setFont('helvetica', 'normal');
       pdf.setTextColor(80);
-      pdf.text(subtitle, margin, y);
+      pdf.text(finalSubtitle, margin, y);
       y += 8;
 
       // Date Range
@@ -104,81 +121,33 @@ class ExportEngine {
         head: [headers],
         body: body,
         theme: 'grid',
-        headStyles: {
-          fillColor: [24, 24, 27],
-          textColor: 255,
-          fontSize: 9,
-          fontStyle: 'bold',
-          halign: 'center'
-        },
-        styles: {
-          fontSize: 8,
-          cellPadding: 3,
-          overflow: 'linebreak'
-        },
+        headStyles: { fillColor: [24, 24, 27], textColor: 255, fontSize: 9, fontStyle: 'bold', halign: 'center' },
+        styles: { fontSize: 8, cellPadding: 3, overflow: 'linebreak' },
         alternateRowStyles: { fillColor: [245, 245, 245] },
         margin: { left: margin, right: margin }
       });
 
-      // Grand Total Row
+      // Grand Total
       const finalY = pdf.lastAutoTable ? pdf.lastAutoTable.finalY + 10 : y + 40;
-
       autoTable(pdf, {
         startY: finalY,
         head: [['', '', '', '', 'GRAND TOTAL', totalSales.toLocaleString('en-US', { minimumFractionDigits: 2 })]],
         body: [],
         theme: 'grid',
-        headStyles: {
-          fillColor: [0, 0, 0],
-          textColor: 255,
-          fontSize: 11,
-          fontStyle: 'bold',
-          halign: 'right'
-        },
-        styles: {
-          fontSize: 10,
-          fontStyle: 'bold',
-          cellPadding: 6
-        },
-        margin: { left: margin, right: margin }
+        headStyles: { fillColor: [0, 0, 0], textColor: 255, fontSize: 11, fontStyle: 'bold', halign: 'right' },
+        styles: { fontSize: 10, fontStyle: 'bold', cellPadding: 6 }
       });
 
       const fileDate = new Date().toISOString().split('T')[0];
-      pdf.save(`${fileNamePrefix}_${fileDate}.pdf`);
+      let finalFileName = fileNamePrefix;
+      if (category && category !== 'All Categories') finalFileName += `_${category.replace(/\s+/g, '_')}`;
+      if (discount && discount !== 'All Transactions') finalFileName += `_${discount.replace(/\s+/g, '_')}`;
+      
+      pdf.save(`${finalFileName}_${fileDate}.pdf`);
 
     } catch (err) {
       console.error('ExportEngine: Failed to generate PDF', err);
       alert('Failed to generate PDF. Please try again.');
-    }
-  }
-
-  /**
-   * Export any DOM element as high-quality PNG
-   */
-  static async exportToImage(elementId, fileNamePrefix = 'Snapshot') {
-    const element = document.getElementById(elementId);
-    if (!element) {
-      console.error(`ExportEngine: Element #${elementId} not found`);
-      return;
-    }
-
-    try {
-      const canvas = await html2canvas(element, {
-        scale: 2,
-        backgroundColor: '#ffffff',
-        useCORS: true,
-        logging: false
-      });
-
-      const imgData = canvas.toDataURL('image/png');
-      const link = document.createElement('a');
-      link.href = imgData;
-      link.download = `${fileNamePrefix}_${new Date().toISOString().split('T')[0]}.png`;
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-    } catch (err) {
-      console.error('ExportEngine: Image export failed', err);
     }
   }
 }

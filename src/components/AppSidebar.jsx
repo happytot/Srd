@@ -3,6 +3,7 @@ import { signOut } from 'firebase/auth';
 import { auth } from '../firebase';
 import { LogOut } from 'lucide-react';
 import { isAdminRole } from '../utils/roles';
+import { endUserSession } from '../utils/userActivityLogger';
 
 const AppSidebar = ({ user, navItems, activeTab, setActiveTab }) => {
   const [showLogoutModal, setShowLogoutModal] = useState(false);
@@ -45,13 +46,11 @@ const AppSidebar = ({ user, navItems, activeTab, setActiveTab }) => {
 
         <div className="overflow-hidden flex-1">
           <p className="text-xs font-bold truncate">{user.name}</p>
-          <span
-            className={
-              isAdminRole(user.role)
-                ? 'badge-admin'
-                : 'text-[10px] font-bold uppercase tracking-wider text-violet-700 bg-violet-50 px-2 py-0.5 rounded-full'
-            }
-          >
+          <span className={
+            isAdminRole(user.role)
+              ? 'badge-admin'
+              : 'text-[10px] font-bold uppercase tracking-wider text-violet-700 bg-violet-50 px-2 py-0.5 rounded-full'
+          }>
             {user.role}
           </span>
         </div>
@@ -74,7 +73,7 @@ const AppSidebar = ({ user, navItems, activeTab, setActiveTab }) => {
               </div>
               <h3 className="text-lg font-bold text-center text-zinc-900 mb-2">Ready to leave?</h3>
               <p className="text-sm text-zinc-500 text-center mb-6">
-                Are you sure you want to sign out of the dashboard?
+                Are you sure you want to sign out?
               </p>
               <div className="flex gap-3">
                 <button
@@ -84,7 +83,15 @@ const AppSidebar = ({ user, navItems, activeTab, setActiveTab }) => {
                   Cancel
                 </button>
                 <button
-                  onClick={() => signOut(auth)}
+                  onClick={async () => {
+                    // End session before signing out
+                    const sessionId = `${user.uid}_SRD_${localStorage.getItem('srdClientId')}`;
+                    if (sessionId) {
+                      await endUserSession(sessionId, user);   // ← Important
+                    }
+                    setShowLogoutModal(false);
+                    signOut(auth);
+                  }}
                   className="flex-1 px-4 py-2 bg-rose-600 hover:bg-rose-700 text-white text-sm font-bold rounded-xl transition-colors shadow-sm"
                 >
                   Yes, Sign Out

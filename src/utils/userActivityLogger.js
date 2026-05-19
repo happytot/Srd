@@ -6,7 +6,6 @@ const CLIENT_ID_KEY = 'srdClientId';
 
 /**
  * Generates or retrieves a persistent client ID from localStorage.
- * Used to uniquely identify the same browser/tab session.
  */
 function getClientId() {
   let id = localStorage.getItem(CLIENT_ID_KEY);
@@ -26,7 +25,7 @@ export function getSessionDocId(uid) {
 }
 
 /**
- * Start a new user session (or update existing one).
+ * Start a new user session + log LOGIN
  */
 export async function startUserSession(user) {
   if (!user?.uid) {
@@ -38,21 +37,23 @@ export async function startUserSession(user) {
   const sessionRef = doc(db, 'user_sessions', sessionId);
 
   try {
-    await setDoc(
-      sessionRef,
-      {
-        uid: user.uid,
-        name: user.name || user.email || 'Unknown User',
-        email: user.email || '',
-        role: user.role || '',
-        subsystem: SUBSYSTEM,
-        status: 'online',
-        loginAt: serverTimestamp(),
-        lastSeenAt: serverTimestamp(),
-        clientId: getClientId(),
-      },
-      { merge: true }
-    );
+    await setDoc(sessionRef, {
+      uid: user.uid,
+      name: user.name || user.email || 'Unknown User',
+      email: user.email || '',
+      role: user.role || '',
+      subsystem: SUBSYSTEM,
+      status: 'online',
+      loginAt: serverTimestamp(),
+      lastSeenAt: serverTimestamp(),
+      clientId: getClientId(),
+    }, { merge: true });
+
+    await logUserAction(user, 'LOGIN', { 
+      subsystem: SUBSYSTEM,
+      message: 'User logged into SRD dashboard'
+    });
+
     return sessionId;
   } catch (error) {
     console.error('Failed to start user session:', error);
@@ -61,11 +62,10 @@ export async function startUserSession(user) {
 }
 
 /**
- * Update lastSeenAt to keep session alive (called periodically).
+ * Keep session alive
  */
 export async function heartbeatSession(sessionId) {
   if (!sessionId) return;
-
   try {
     await updateDoc(doc(db, 'user_sessions', sessionId), {
       status: 'online',
@@ -77,9 +77,9 @@ export async function heartbeatSession(sessionId) {
 }
 
 /**
- * Mark session as offline on logout.
+ * End session + log LOGOUT
  */
-export async function endUserSession(sessionId) {
+export async function endUserSession(sessionId, user) {
   if (!sessionId) return;
 
   try {
@@ -88,19 +88,23 @@ export async function endUserSession(sessionId) {
       logoutAt: serverTimestamp(),
       lastSeenAt: serverTimestamp(),
     });
+
+    if (user) {
+      await logUserAction(user, 'LOGOUT', { 
+        subsystem: SUBSYSTEM,
+        message: 'User logged out of SRD dashboard'
+      });
+    }
   } catch (error) {
     console.error('Failed to end user session:', error);
   }
 }
 
 /**
- * Log any user action to the activity_logs collection.
+ * Log any user action
  */
 export async function logUserAction(user, action, meta = {}) {
-  if (!user?.uid || !action) {
-    console.error('logUserAction: user.uid and action are required');
-    return;
-  }
+  if (!user?.uid || !action) return;
 
   try {
     await addDoc(collection(db, 'activity_logs'), {
