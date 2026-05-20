@@ -1,10 +1,52 @@
 import { utils, writeFile } from 'xlsx';
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
-import html2canvas from 'html2canvas';
+
+/**
+ * ExportEngine – Professional exports for the Coffee & Tea Sales Dashboard
+ */
+class ExportEngine {
+  /**
+   * Export to Excel (.xlsx)
+   */
+  static exportToExcel(data, fileNamePrefix = 'Export', titleName = '', subtitle = '', category = '', discount = '') {
+    if (!data || !Array.isArray(data) || data.length === 0) {
+      console.warn('ExportEngine: No data for Excel export');
+      return;
+    }
+
+    const dateStr = new Date().toISOString().split('T')[0];
+    let finalFileName = fileNamePrefix;
+
+    if (category && category !== 'All Categories') {
+      finalFileName += `_${category.replace(/\s+/g, '_')}`;
+    }
+    if (discount && discount !== 'All Transactions') {
+      finalFileName += `_${discount.replace(/\s+/g, '_')}`;
+    }
+    finalFileName += `_${dateStr}.xlsx`;
+
+    const worksheet = utils.json_to_sheet([]);
+    let row = 0;
+
+    if (titleName) utils.sheet_add_aoa(worksheet, [[titleName]], { origin: `A${++row}` });
+
+    let finalSubtitle = subtitle;
+    if (category && category !== 'All Categories') finalSubtitle += ` - ${category}`;
+    if (discount && discount !== 'All Transactions') finalSubtitle += ` - ${discount}`;
+
+    if (finalSubtitle) utils.sheet_add_aoa(worksheet, [[finalSubtitle]], { origin: `A${++row}` });
+    if (row > 0) utils.sheet_add_aoa(worksheet, [[]], { origin: `A${++row}` });
+
+    utils.sheet_add_json(worksheet, data, { origin: `A${row + 1}`, skipHeader: false });
+
+    const workbook = utils.book_new();
+    utils.book_append_sheet(workbook, worksheet, 'Report');
+    writeFile(workbook, finalFileName);
+  }
 
   /**
-   * Export to PDF
+   * Export to PDF with proper Date Range display
    */
   static async exportToPDF(data, fileNamePrefix = 'Sales_Report', titleName = 'Coffee & Tea Connection', subtitle = 'Sales Report', dateRangeInfo = '', category = '', discount = '') {
     if (!data || !Array.isArray(data) || data.length === 0) {
@@ -34,7 +76,7 @@ import html2canvas from 'html2canvas';
       pdf.text(finalSubtitle, margin, y);
       y += 8;
 
-      // === DATE RANGE (This is the main change) ===
+      // Date Range (Highlighted)
       if (dateRangeInfo) {
         pdf.setFontSize(11);
         pdf.setFont('helvetica', 'bold');
@@ -50,7 +92,7 @@ import html2canvas from 'html2canvas';
       pdf.text(`Generated on: ${new Date().toLocaleDateString('en-US')} at ${new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })}`, margin, y);
       y += 15;
 
-      // Summary Section
+      // Summary
       const totalSales = data.reduce((sum, row) => {
         const amt = row['Amount'] || row['Total'] || 0;
         return sum + (typeof amt === 'string' ? parseFloat(amt.replace(/[^0-9.-]+/g, '')) || 0 : Number(amt) || 0);
@@ -67,7 +109,7 @@ import html2canvas from 'html2canvas';
       pdf.text(`Total Transactions: ${transactionCount}`, margin, y);
       y += 18;
 
-      // Main Table
+      // Table
       const headers = Object.keys(data[0]);
       const body = data.map(row => headers.map(key => {
         const value = row[key];
@@ -103,7 +145,7 @@ import html2canvas from 'html2canvas';
       let finalFileName = fileNamePrefix;
       if (category && category !== 'All Categories') finalFileName += `_${category.replace(/\s+/g, '_')}`;
       if (discount && discount !== 'All Transactions') finalFileName += `_${discount.replace(/\s+/g, '_')}`;
-      
+
       pdf.save(`${finalFileName}_${fileDate}.pdf`);
 
     } catch (err) {
@@ -111,5 +153,6 @@ import html2canvas from 'html2canvas';
       alert('Failed to generate PDF. Please try again.');
     }
   }
+}
 
 export default ExportEngine;
