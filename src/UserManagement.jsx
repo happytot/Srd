@@ -1,9 +1,9 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { db, secondaryAuth, auth } from './firebase';
 import { Search, UserPlus, Mail, RefreshCw, Trash2, Edit } from 'lucide-react';
-import { 
-  collection, getDocs, doc, setDoc, updateDoc, addDoc, 
-  serverTimestamp, query, orderBy, limit, where, deleteDoc 
+import {
+  collection, getDocs, doc, setDoc, updateDoc, addDoc,
+  serverTimestamp, query, orderBy, limit, where, deleteDoc
 } from 'firebase/firestore';
 import { createUserWithEmailAndPassword, sendPasswordResetEmail, updateProfile } from 'firebase/auth';
 
@@ -128,8 +128,7 @@ const UserManagement = ({ currentUser }) => {
       setNewUserConfirmPassword('');
       setShowPassword(false);
       setShowConfirmPassword(false);
-      setNewUserRole('cashier');
-
+      setNewUserRole('barista');
       // Refresh data
       await fetchUsers();
       await fetchAuditLogs();
@@ -143,10 +142,10 @@ const UserManagement = ({ currentUser }) => {
 
   const handleToggleStatus = async (userId, currentStatus, userEmail) => {
     const newStatus = currentStatus === 'Active' ? 'Inactive' : 'Active';
-    
+
     try {
       await updateDoc(doc(db, 'users', userId), { status: newStatus });
-      
+
       await addDoc(collection(db, 'audit_logs'), {
         action: 'UPDATE_USER_STATUS',
         adminId: currentUser.uid,
@@ -222,7 +221,7 @@ const UserManagement = ({ currentUser }) => {
     try {
       // Soft delete since hard deletes are forbidden by Firebase security rules
       await updateDoc(doc(db, 'users', userToDelete.id), { status: 'Deleted' });
-      
+
       await addDoc(collection(db, 'audit_logs'), {
         action: 'DELETE_USER',
         adminId: currentUser.uid,
@@ -267,9 +266,18 @@ const UserManagement = ({ currentUser }) => {
 
   const getRoleBadge = (role) => {
     const base = 'inline-flex items-center rounded-md px-2 py-1 text-xs font-semibold border';
-    if (role === 'Admin' || role === 'admin') return `${base} text-indigo-700 bg-indigo-50 border-indigo-200`;
-    if (role === 'Manager' || role === 'manager') return `${base} text-violet-700 bg-violet-50 border-violet-200`;
-    if (role === 'Cashier' || role === 'cashier') return `${base} text-blue-700 bg-blue-50 border-blue-200`;
+
+    const displayRole = role === 'cashier' ? 'Barista' : role;
+
+    if (role === 'admin' || role === 'Admin')
+      return `${base} text-indigo-700 bg-indigo-50 border-indigo-200`;
+
+    if (role === 'manager' || role === 'Manager')
+      return `${base} text-violet-700 bg-violet-50 border-violet-200`;
+
+    if (role === 'cashier' || role === 'Barista')
+      return `${base} text-amber-700 bg-amber-50 border-amber-200`;
+
     return `${base} text-zinc-700 bg-zinc-50 border-zinc-200`;
   };
 
@@ -293,7 +301,7 @@ const UserManagement = ({ currentUser }) => {
           />
         </div>
 
-        <button 
+        <button
           onClick={() => setIsModalOpen(true)}
           className="w-full sm:w-auto px-4 py-2.5 bg-black text-white rounded-lg text-sm font-bold shadow-sm hover:bg-zinc-800 transition-all active:scale-[0.98] flex items-center justify-center gap-2"
         >
@@ -321,10 +329,10 @@ const UserManagement = ({ currentUser }) => {
                   <tr key={user.id} className="hover:bg-zinc-50 transition-colors">
                     <td className="px-6 py-4 whitespace-nowrap">
                       <div className="flex items-center">
-                        <img 
-                          className="h-10 w-10 rounded-full bg-zinc-100" 
-                          src={user.avatar || `https://api.dicebear.com/7.x/avataaars/svg?seed=${user.name}`} 
-                          alt={user.name} 
+                        <img
+                          className="h-10 w-10 rounded-full bg-zinc-100"
+                          src={user.avatar || `https://api.dicebear.com/7.x/avataaars/svg?seed=${user.name}`}
+                          alt={user.name}
                         />
                         <div className="ml-4">
                           <div className="font-bold text-zinc-900">{user.name}</div>
@@ -333,14 +341,14 @@ const UserManagement = ({ currentUser }) => {
                       </div>
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap">
-                      <select 
+                      <select
                         value={user.role?.toLowerCase() || ''}
                         onChange={(e) => handleChangeRole(user.id, e.target.value, user.email)}
                         className={`cursor-pointer outline-none appearance-none ${getRoleBadge(user.role)}`}
                       >
                         <option value="admin">Admin</option>
                         <option value="manager">Manager</option>
-                        <option value="cashier">Cashier</option>
+                        <option value="cashier">Barista</option>
                       </select>
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap">
@@ -348,27 +356,41 @@ const UserManagement = ({ currentUser }) => {
                         {user.status || 'Active'}
                       </span>
                     </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
-                      <button 
-                        onClick={() => handleResetPassword(user.email)}
-                        className="text-indigo-600 hover:text-indigo-900 font-bold transition-colors mr-3"
-                        title="Reset Password"
-                      >
-                        Reset Pwd
-                      </button>
-                      <button 
-                        onClick={() => handleToggleStatus(user.id, user.status || 'Active', user.email)}
-                        className={`${(user.status || 'Active') === 'Active' ? 'text-amber-600 hover:text-amber-900' : 'text-emerald-600 hover:text-emerald-900'} font-bold transition-colors mr-3`}
-                      >
-                        {(user.status || 'Active') === 'Active' ? 'Deactivate' : 'Activate'}
-                      </button>
-                      <button 
-                        onClick={() => confirmDelete(user)}
-                        className="text-rose-600 hover:text-rose-900 font-bold transition-colors"
-                        title="Delete User"
-                      >
-                        Delete
-                      </button>
+                    <td className="px-6 py-4 whitespace-nowrap text-right">
+                      <div className="flex items-center justify-end gap-2">
+                        {/* Reset Password Button */}
+                        <button 
+                          onClick={() => handleResetPassword(user.email)}
+                          className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-indigo-600 hover:bg-indigo-50 rounded-lg transition-all hover:scale-105 border border-indigo-100"
+                          title="Reset Password"
+                        >
+                          <Mail size={14} />
+                          Reset
+                        </button>
+
+                        {/* Toggle Status Button */}
+                        <button 
+                          onClick={() => handleToggleStatus(user.id, user.status || 'Active', user.email)}
+                          className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg transition-all hover:scale-105 border ${
+                            (user.status || 'Active') === 'Active' 
+                              ? 'text-amber-600 hover:bg-amber-50 border-amber-100' 
+                              : 'text-emerald-600 hover:bg-emerald-50 border-emerald-100'
+                          }`}
+                        >
+                          <RefreshCw size={14} />
+                          {(user.status || 'Active') === 'Active' ? 'Deactivate' : 'Activate'}
+                        </button>
+
+                        {/* Delete Button */}
+                        <button 
+                          onClick={() => confirmDelete(user)}
+                          className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-rose-600 hover:bg-rose-50 rounded-lg transition-all hover:scale-105 border border-rose-100"
+                          title="Delete User"
+                        >
+                          <Trash2 size={14} />
+                          Delete
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 ))}
@@ -395,7 +417,7 @@ const UserManagement = ({ currentUser }) => {
                 Showing {(currentPage - 1) * itemsPerPage + 1} to {Math.min(currentPage * itemsPerPage, filteredUsers.length)} of {filteredUsers.length} entries
               </span>
               <div className="flex gap-1">
-                <button 
+                <button
                   onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
                   disabled={currentPage === 1}
                   className="px-3 py-1 border border-zinc-200 rounded hover:bg-zinc-100 disabled:opacity-50"
@@ -403,7 +425,7 @@ const UserManagement = ({ currentUser }) => {
                   Previous
                 </button>
                 <button className="px-3 py-1 bg-black text-white rounded">{currentPage}</button>
-                <button 
+                <button
                   onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
                   disabled={currentPage === totalPages}
                   className="px-3 py-1 border border-zinc-200 rounded hover:bg-zinc-100 disabled:opacity-50"
@@ -424,11 +446,11 @@ const UserManagement = ({ currentUser }) => {
             auditLogs.map(log => (
               <div key={log.id} className="text-sm flex items-start gap-3 bg-zinc-50 p-3 rounded-lg border border-zinc-100">
                 <span className="flex shrink-0 items-center justify-center w-8 h-8 rounded-full bg-white border border-zinc-200 shadow-sm mt-0.5">
-                  {log.action === 'CREATE_USER' ? <UserPlus size={14} className="text-emerald-500" /> : 
-                   log.action === 'PASSWORD_RESET' ? <Mail size={14} className="text-indigo-500" /> : 
-                   log.action === 'UPDATE_USER_STATUS' ? <RefreshCw size={14} className="text-blue-500" /> : 
-                   log.action === 'DELETE_USER' ? <Trash2 size={14} className="text-rose-500" /> : 
-                   <Edit size={14} className="text-amber-500" />}
+                  {log.action === 'CREATE_USER' ? <UserPlus size={14} className="text-emerald-500" /> :
+                    log.action === 'PASSWORD_RESET' ? <Mail size={14} className="text-indigo-500" /> :
+                      log.action === 'UPDATE_USER_STATUS' ? <RefreshCw size={14} className="text-blue-500" /> :
+                        log.action === 'DELETE_USER' ? <Trash2 size={14} className="text-rose-500" /> :
+                          <Edit size={14} className="text-amber-500" />}
                 </span>
                 <div>
                   <p className="font-medium text-zinc-900">{log.details}</p>
@@ -449,7 +471,7 @@ const UserManagement = ({ currentUser }) => {
         <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
           <div className="bg-white rounded-2xl p-6 w-full max-w-md shadow-2xl animate-in zoom-in-95 duration-200">
             <h2 className="text-xl font-bold mb-4">Add New User</h2>
-            
+
             <form onSubmit={handleAddUser} className="space-y-4">
               {formError && (
                 <div className="p-3 bg-red-50 text-red-600 rounded-xl text-sm font-medium">{formError}</div>
@@ -457,49 +479,49 @@ const UserManagement = ({ currentUser }) => {
 
               <div>
                 <label className="block text-sm font-medium text-zinc-700 mb-1">Full Name</label>
-                <input 
-                  required 
-                  type="text" 
-                  value={newUserName} 
-                  onChange={e => setNewUserName(e.target.value)} 
-                  className="w-full px-3 py-2 border rounded-xl" 
-                  placeholder="John Doe" 
+                <input
+                  required
+                  type="text"
+                  value={newUserName}
+                  onChange={e => setNewUserName(e.target.value)}
+                  className="w-full px-3 py-2 border rounded-xl"
+                  placeholder="John Doe"
                 />
               </div>
 
               <div>
                 <label className="block text-sm font-medium text-zinc-700 mb-1">Username</label>
-                <input 
-                  required 
-                  type="text" 
-                  value={newUserUsername} 
-                  onChange={e => setNewUserUsername(e.target.value)} 
-                  className="w-full px-3 py-2 border rounded-xl" 
-                  placeholder="johndoe" 
+                <input
+                  required
+                  type="text"
+                  value={newUserUsername}
+                  onChange={e => setNewUserUsername(e.target.value)}
+                  className="w-full px-3 py-2 border rounded-xl"
+                  placeholder="johndoe"
                 />
               </div>
 
               <div>
                 <label className="block text-sm font-medium text-zinc-700 mb-1">Email Address <span className="text-zinc-400 font-normal">(Optional)</span></label>
-                <input 
-                  type="email" 
-                  value={newUserEmail} 
-                  onChange={e => setNewUserEmail(e.target.value)} 
-                  className="w-full px-3 py-2 border rounded-xl" 
-                  placeholder="john@example.com" 
+                <input
+                  type="email"
+                  value={newUserEmail}
+                  onChange={e => setNewUserEmail(e.target.value)}
+                  className="w-full px-3 py-2 border rounded-xl"
+                  placeholder="john@example.com"
                 />
               </div>
 
               <div>
                 <label className="block text-sm font-medium text-zinc-700 mb-1">Temporary Password</label>
                 <div className="relative">
-                  <input 
-                    required 
-                    type={showPassword ? "text" : "password"} 
-                    value={newUserPassword} 
-                    onChange={e => setNewUserPassword(e.target.value)} 
-                    className="w-full px-3 py-2 pr-10 border rounded-xl" 
-                    placeholder="Minimum 6 characters" 
+                  <input
+                    required
+                    type={showPassword ? "text" : "password"}
+                    value={newUserPassword}
+                    onChange={e => setNewUserPassword(e.target.value)}
+                    className="w-full px-3 py-2 pr-10 border rounded-xl"
+                    placeholder="Minimum 6 characters"
                   />
                   <button
                     type="button"
@@ -518,13 +540,13 @@ const UserManagement = ({ currentUser }) => {
               <div>
                 <label className="block text-sm font-medium text-zinc-700 mb-1">Confirm Password</label>
                 <div className="relative">
-                  <input 
-                    required 
-                    type={showConfirmPassword ? "text" : "password"} 
-                    value={newUserConfirmPassword} 
-                    onChange={e => setNewUserConfirmPassword(e.target.value)} 
-                    className="w-full px-3 py-2 pr-10 border rounded-xl" 
-                    placeholder="Minimum 6 characters" 
+                  <input
+                    required
+                    type={showConfirmPassword ? "text" : "password"}
+                    value={newUserConfirmPassword}
+                    onChange={e => setNewUserConfirmPassword(e.target.value)}
+                    className="w-full px-3 py-2 pr-10 border rounded-xl"
+                    placeholder="Minimum 6 characters"
                   />
                   <button
                     type="button"
@@ -542,28 +564,28 @@ const UserManagement = ({ currentUser }) => {
 
               <div>
                 <label className="block text-sm font-medium text-zinc-700 mb-1">Role</label>
-                <select 
-                  value={newUserRole} 
-                  onChange={e => setNewUserRole(e.target.value)} 
+                <select
+                  value={newUserRole}
+                  onChange={e => setNewUserRole(e.target.value)}
                   className="w-full px-3 py-2 border rounded-xl bg-white focus:outline-none focus:ring-2 focus:ring-black"
                 >
-                  <option value="cashier">Cashier</option>
+                  <option value="cashier">Barista</option>
                   <option value="manager">Manager</option>
                   <option value="admin">Admin</option>
                 </select>
               </div>
 
               <div className="flex justify-end gap-3 mt-6 pt-4 border-t border-zinc-100">
-                <button 
-                  type="button" 
-                  onClick={() => setIsModalOpen(false)} 
+                <button
+                  type="button"
+                  onClick={() => setIsModalOpen(false)}
                   className="px-4 py-2 text-zinc-600 hover:bg-zinc-100 rounded-xl font-medium transition-colors"
                 >
                   Cancel
                 </button>
-                <button 
-                  type="submit" 
-                  disabled={isSubmitting} 
+                <button
+                  type="submit"
+                  disabled={isSubmitting}
                   className="px-4 py-2 bg-black text-white rounded-xl font-bold hover:bg-zinc-800 transition-colors disabled:opacity-50"
                 >
                   {isSubmitting ? 'Creating...' : 'Create User'}
@@ -583,7 +605,7 @@ const UserManagement = ({ currentUser }) => {
               Are you sure you want to delete <strong>{userToDelete.name}</strong>? This will permanently remove their access.
             </p>
             <div className="flex justify-end gap-3">
-              <button 
+              <button
                 onClick={() => {
                   setDeleteModalOpen(false);
                   setUserToDelete(null);
@@ -592,7 +614,7 @@ const UserManagement = ({ currentUser }) => {
               >
                 Cancel
               </button>
-              <button 
+              <button
                 onClick={executeDelete}
                 className="px-4 py-2 bg-rose-600 text-white rounded-xl font-bold hover:bg-rose-700 transition-colors"
               >

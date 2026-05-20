@@ -46,12 +46,16 @@ const AppSidebar = ({ user, navItems, activeTab, setActiveTab }) => {
 
         <div className="overflow-hidden flex-1">
           <p className="text-xs font-bold truncate">{user.name}</p>
-          <span className={
-            isAdminRole(user.role)
-              ? 'badge-admin'
-              : 'text-[10px] font-bold uppercase tracking-wider text-violet-700 bg-violet-50 px-2 py-0.5 rounded-full'
-          }>
-            {user.role}
+          <span
+            className={
+              isAdminRole(user.role)
+                ? 'badge-admin'
+                : user.role?.toLowerCase() === 'cashier'
+                  ? 'text-[10px] font-bold uppercase tracking-wider text-amber-700 bg-amber-50 px-2 py-0.5 rounded-full'
+                  : 'text-[10px] font-bold uppercase tracking-wider text-violet-700 bg-violet-50 px-2 py-0.5 rounded-full'
+            }
+          >
+            {user.role?.toLowerCase() === 'cashier' ? 'BARISTA' : user.role}
           </span>
         </div>
 

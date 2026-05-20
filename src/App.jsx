@@ -513,13 +513,15 @@ useEffect(() => {
 
   if (!user) return <LoginPage onLogin={(userData) => setUser(userData)} />;
 
+  const hasFullAccess = isAdminRole(user.role);
+
   const navItems = [
     { name: 'Overview', icon: '' },
     { name: 'Sales Analytics', icon: '' },
     { name: 'Sales Forecasting', icon: '' },
     { name: 'Sales Reports', icon: '' },
     { name: 'Inventory Alerts', icon: '' },
-    ...(isAdminRole(user.role) ? [
+    ...(hasFullAccess ? [
       { name: 'User Management', icon: '' },
       { name: 'Activity Logs', icon: '' }
     ] : [])
@@ -560,9 +562,9 @@ useEffect(() => {
           />
         ) : activeTab === 'Inventory Alerts' ? (
           <InventoryAlerts />
-        ) : activeTab === 'User Management' && isAdminRole(user.role) ? (
+        ) : activeTab === 'User Management' && hasFullAccess ? (
           <UserManagement currentUser={user} />
-        ) : activeTab === 'Activity Logs' && isAdminRole(user.role) ? (
+        ) : activeTab === 'Activity Logs' && hasFullAccess ? (
           <ActivityLogs currentUser={user} />
         ) : (
           <Overview globalDateRange={globalDateRange} globalCustomStart={globalCustomStart} globalCustomEnd={globalCustomEnd} />

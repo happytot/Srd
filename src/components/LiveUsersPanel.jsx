@@ -7,13 +7,17 @@ const LiveUsersPanel = ({ currentUser }) => {
   const [liveUsers, setLiveUsers] = useState([]);
   const [now, setNow] = useState(Date.now());
 
+  // Update time every 30 seconds for "Last Seen"
   useEffect(() => {
     const interval = setInterval(() => setNow(Date.now()), 30000);
     return () => clearInterval(interval);
   }, []);
 
+  // Only allow Admin OR Manager
+  const hasFullAccess = isAdminRole(currentUser?.role);
+
   useEffect(() => {
-    if (!isAdminRole(currentUser?.role)) return;
+    if (!hasFullAccess) return;
 
     // Listen to ALL online sessions across every subsystem
     const q = query(
@@ -40,7 +44,6 @@ const LiveUsersPanel = ({ currentUser }) => {
             activeSubsystems: [session.subsystem || 'SRD']
           };
         } else {
-          // User already exists → add subsystem to the list
           const currentSubsystems = uniqueUsers[userKey].activeSubsystems || [];
           if (!currentSubsystems.includes(session.subsystem)) {
             uniqueUsers[userKey].activeSubsystems = [...currentSubsystems, session.subsystem || 'SRD'];
@@ -48,7 +51,7 @@ const LiveUsersPanel = ({ currentUser }) => {
         }
       });
 
-      // Convert to array and sort by most recently active
+      // Sort by most recently active
       const dedupedUsers = Object.values(uniqueUsers).sort((a, b) => {
         const timeA = a.lastSeenAt?.getTime?.() || 0;
         const timeB = b.lastSeenAt?.getTime?.() || 0;
@@ -59,9 +62,10 @@ const LiveUsersPanel = ({ currentUser }) => {
     });
 
     return () => unsubscribe();
-  }, [currentUser]);
+  }, [hasFullAccess, currentUser]);
 
-  if (!isAdminRole(currentUser?.role)) return null;
+  // Hide panel completely for Staff / other roles
+  if (!hasFullAccess) return null;
 
   // Filter out ghost sessions (last seen > 3 minutes ago)
   const activeUsers = liveUsers.filter(user => {

@@ -13,6 +13,10 @@ const ActivityLogs = ({ currentUser }) => {
   const [loadingOrders, setLoadingOrders] = useState(true);
   const [loadingInventory, setLoadingInventory] = useState(true);
 
+  // Allow both Admin and Manager
+  const isAuthorized = isAdminRole(currentUser?.role) || 
+                      currentUser?.role?.toLowerCase() === 'manager';
+
   // Filters
   const [subsystemFilter, setSubsystemFilter] = useState('All');
   const [userFilter, setUserFilter] = useState('All');
@@ -25,23 +29,33 @@ const ActivityLogs = ({ currentUser }) => {
   const [currentPage, setCurrentPage] = useState(1);
   const logsPerPage = 30;
 
-  // Fetch Activity Logs
+  // Fetch Activity Logs - Allow Admin + Manager
   useEffect(() => {
-    if (!isAdminRole(currentUser?.role)) return;
+    if (!isAuthorized) return;
+
+    setLoadingLogs(true);
 
     const q = query(collection(db, 'activity_logs'), orderBy('createdAt', 'desc'));
-    const unsubscribe = onSnapshot(q, (snapshot) => {
-      const data = snapshot.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data(),
-        createdAt: doc.data().createdAt?.toDate?.() ?? null
-      }));
-      setRawLogs(data);
-      setLoadingLogs(false);
-    });
+
+    const unsubscribe = onSnapshot(q, 
+      (snapshot) => {
+        const data = snapshot.docs.map(doc => ({
+          id: doc.id,
+          ...doc.data(),
+          createdAt: doc.data().createdAt?.toDate?.() ?? null
+        }));
+        setRawLogs(data);
+        setLoadingLogs(false);
+      },
+      (err) => {
+        console.error("Activity Logs Error:", err);
+        setRawLogs([]);
+        setLoadingLogs(false);
+      }
+    );
 
     return () => unsubscribe();
-  }, [currentUser]);
+  }, [currentUser, isAuthorized]);
 
   // Fetch Orders and convert to virtual activity logs
   useEffect(() => {
@@ -222,8 +236,16 @@ const ActivityLogs = ({ currentUser }) => {
   const paginatedLogs = filteredLogs.slice(startIndex, startIndex + logsPerPage);
 
 
-  if (!isAdminRole(currentUser?.role)) {
-    return <div className="text-center py-20 text-zinc-400">Access denied. Admin role required.</div>;
+  if (!isAuthorized) {
+    return (
+      <div className="flex flex-col items-center justify-center py-20 text-zinc-500">
+        <div className="text-6xl mb-4">🔒</div>
+        <h2 className="text-xl font-bold text-zinc-800 mb-2">Access Restricted</h2>
+        <p className="text-center max-w-md">
+          Activity Logs are only available to <strong>Admin</strong> and <strong>Manager</strong> accounts.
+        </p>
+      </div>
+    );
   }
 
   if (loadingLogs || loadingOrders || loadingInventory) {

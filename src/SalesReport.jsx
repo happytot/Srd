@@ -22,7 +22,7 @@ const isUtilityExpense = (expense) => {
 const SalesReport = ({ globalDateRange, globalCustomStart, globalCustomEnd, currentUser }) => {
   const [categoryFilter, setCategoryFilter] = useState('All Categories');
   const [paymentFilter, setPaymentFilter] = useState('All Payments');
-  const [discountFilter, setDiscountFilter] = useState('All Transactions');  const [reportData, setReportData] = useState([]);
+  const [discountFilter, setDiscountFilter] = useState('All Transactions'); const [reportData, setReportData] = useState([]);
   const [expenseRecords, setExpenseRecords] = useState([]);
   const [loading, setLoading] = useState(true);
   const [expensesLoadError, setExpensesLoadError] = useState(null);
@@ -37,6 +37,7 @@ const SalesReport = ({ globalDateRange, globalCustomStart, globalCustomEnd, curr
   const [pendingDeleteExpense, setPendingDeleteExpense] = useState(null);
   const [deleteSaving, setDeleteSaving] = useState(false);
   const [deleteModalError, setDeleteModalError] = useState('');
+  const [showSuccessModal, setShowSuccessModal] = useState(false);
 
   // NEW: Pagination state
   const [currentPage, setCurrentPage] = useState(1);
@@ -83,6 +84,49 @@ const SalesReport = ({ globalDateRange, globalCustomStart, globalCustomEnd, curr
     }
     return { startCurrent, endCurrent };
   }, [globalDateRange, globalCustomStart, globalCustomEnd]);
+
+  const getDateRangeDisplay = () => {
+    if (globalDateRange === 'Custom' && globalCustomStart && globalCustomEnd) {
+      const start = new Date(globalCustomStart).toLocaleDateString('en-US', {
+        year: 'numeric',
+        month: 'long',
+        day: 'numeric'
+      });
+      const end = new Date(globalCustomEnd).toLocaleDateString('en-US', {
+        year: 'numeric',
+        month: 'long',
+        day: 'numeric'
+      });
+      return `${start} — ${end}`;
+    }
+
+    // For preset ranges
+    const now = new Date();
+    let startStr, endStr;
+
+    switch (globalDateRange) {
+      case 'Today':
+        startStr = endStr = now.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
+        break;
+      case 'Weekly':
+      case 'Last 7 Days':
+        const weekStart = new Date(now);
+        weekStart.setDate(weekStart.getDate() - 6);
+        startStr = weekStart.toLocaleDateString('en-US', { month: 'long', day: 'numeric' });
+        endStr = now.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
+        break;
+      case 'Monthly':
+      case 'Month to Date':
+        startStr = new Date(now.getFullYear(), now.getMonth(), 1)
+          .toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+        endStr = now.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
+        break;
+      default:
+        return `Period: ${globalDateRange}`;
+    }
+
+    return `${startStr} — ${endStr}`;
+  };
 
   const loadExpenses = useCallback(async () => {
     setExpensesLoadError(null);
@@ -206,19 +250,19 @@ const SalesReport = ({ globalDateRange, globalCustomStart, globalCustomEnd, curr
 
     // NEW: Discount Filter
     if (discountFilter !== 'All Transactions' && matchedItem.isMatch) {
-      const hasAnyDiscount = item.originalItems.some(i => 
+      const hasAnyDiscount = item.originalItems.some(i =>
         i.discountType && i.discountType !== 'None'
       );
 
       if (discountFilter === 'No Discount') {
         if (hasAnyDiscount) matchedItem.isMatch = false;
-      } 
+      }
       else if (discountFilter === 'With Discount') {
         if (!hasAnyDiscount) matchedItem.isMatch = false;
-      } 
+      }
       else {
         // Specific discount type (PWD, Senior)
-        const hasSpecificDiscount = item.originalItems.some(i => 
+        const hasSpecificDiscount = item.originalItems.some(i =>
           i.discountType === discountFilter
         );
         if (!hasSpecificDiscount) matchedItem.isMatch = false;
@@ -327,7 +371,29 @@ const SalesReport = ({ globalDateRange, globalCustomStart, globalCustomEnd, curr
       setExpenseSubType('');
       await loadExpenses();
 
-      alert("✅ Expense added successfully!");
+      // Log to Activity Logs
+      try {
+        await addDoc(collection(db, 'activity_logs'), {
+          uid: currentUser.uid,
+          name: currentUser.name || currentUser.email || 'Unknown User',
+          role: currentUser.role || 'staff',
+          subsystem: 'SRD',
+          action: 'ADD_EXPENSE',
+          meta: {
+            amount: raw,
+            expenseType: expenseType,
+            expenseSubType: expenseSubType || null,
+            description: expenseNote || null
+          },
+          createdAt: serverTimestamp()
+        });
+      } catch (logErr) {
+        console.warn("Failed to log expense addition:", logErr);
+      }
+
+      // Show success modal
+      setShowSuccessModal(true);
+
     } catch (err) {
       console.error(err);
       setExpenseFormError('Could not save expense. Check Firestore rules.');
@@ -341,6 +407,26 @@ const SalesReport = ({ globalDateRange, globalCustomStart, globalCustomEnd, curr
     setDeleteSaving(true);
     try {
       await deleteDoc(doc(db, 'expenses', pendingDeleteExpense.id));
+
+      // Log to Activity Logs
+      try {
+        await addDoc(collection(db, 'activity_logs'), {
+          uid: currentUser.uid,
+          name: currentUser.name || currentUser.email || 'Unknown User',
+          role: currentUser.role || 'staff',
+          subsystem: 'SRD',
+          action: 'DELETE_EXPENSE',
+          meta: {
+            expenseId: pendingDeleteExpense.id,
+            amount: pendingDeleteExpense.amount,
+            description: pendingDeleteExpense.description || null
+          },
+          createdAt: serverTimestamp()
+        });
+      } catch (logErr) {
+        console.warn("Failed to log expense deletion:", logErr);
+      }
+
       setPendingDeleteExpense(null);
       await loadExpenses();
     } catch (err) {
@@ -403,32 +489,40 @@ const SalesReport = ({ globalDateRange, globalCustomStart, globalCustomEnd, curr
     const exportData = generateExportData();
     if (exportData.length === 0) return;
     ExportEngine.exportToExcel(
-      exportData, 
-      getFileNamePrefix(), 
-      'Coffee and Tea Connection', 
+      exportData,
+      getFileNamePrefix(),
+      'Coffee and Tea Connection',
       getReportName(),
       categoryFilter,
       discountFilter   // ← Added
     );
   };
 
-  const handleExportPDF = () => {
-    const exportData = generateExportData();
-    if (exportData.length === 0) return;
+const handleExportPDF = () => {
+  const exportData = generateExportData();
+  if (exportData.length === 0) return;
 
-    let reportSubtitle = `${globalDateRange} Sales Report`;
-    // ... (your existing subtitle logic remains the same)
+  // Generate nice date range string for PDF
+  const dateRangeInfo = getDateRangeDisplay();
 
-    ExportEngine.exportToPDF(
-      exportData,
-      getFileNamePrefix(),
-      'Coffee & Tea Connection',
-      reportSubtitle,
-      '', 
-      categoryFilter,
-      discountFilter   // ← Added
-    );
-  };
+  let reportSubtitle = `${globalDateRange} Sales Report`;
+  if (categoryFilter !== 'All Categories') {
+    reportSubtitle += ` • ${categoryFilter}`;
+  }
+  if (discountFilter !== 'All Transactions') {
+    reportSubtitle += ` • ${discountFilter}`;
+  }
+
+  ExportEngine.exportToPDF(
+    exportData,
+    getFileNamePrefix(),
+    'Coffee & Tea Connection',
+    reportSubtitle,
+    dateRangeInfo,           // ← NEW: Pass date range here
+    categoryFilter,
+    discountFilter
+  );
+};
 
   // Pagination handlers
   const goToPreviousPage = () => {
@@ -484,7 +578,7 @@ const SalesReport = ({ globalDateRange, globalCustomStart, globalCustomEnd, curr
             ))}
           </select>
 
-                 {/* Discount Filter - Improved Labels */}
+          {/* Discount Filter - Improved Labels */}
           <select
             value={discountFilter}
             onChange={(e) => setDiscountFilter(e.target.value)}
@@ -805,8 +899,55 @@ const SalesReport = ({ globalDateRange, globalCustomStart, globalCustomEnd, curr
         </div>
       </div>
 
-      {/* Expense Recording Section + Modals (unchanged) */}
-      {/* [Your full expense form, confirmation modal, and delete modal are kept exactly as before] */}
+      {/* SUCCESS MODAL AFTER ADDING EXPENSE */}
+      {showSuccessModal && (
+        <div className="fixed inset-0 flex items-center justify-center bg-black/50 backdrop-blur-sm z-50 p-4">
+          <div className="bg-white rounded-2xl p-8 w-full max-w-sm shadow-2xl text-center">
+            <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-emerald-100 flex items-center justify-center">
+              <span className="text-4xl">✅</span>
+            </div>
+            <h3 className="text-2xl font-bold text-emerald-700 mb-2">Expense Added!</h3>
+            <p className="text-zinc-600 mb-6">The expense has been recorded successfully.</p>
+            <button
+              onClick={() => setShowSuccessModal(false)}
+              className="w-full py-3 bg-emerald-600 text-white rounded-xl font-semibold hover:bg-emerald-700 transition-all"
+            >
+              Done
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* DELETE CONFIRMATION MODAL FOR EXPENSES */}
+      {pendingDeleteExpense && (
+        <div className="fixed inset-0 flex items-center justify-center bg-black/50 backdrop-blur-sm z-50 p-4">
+          <div className="bg-white rounded-2xl p-6 w-full max-w-sm shadow-2xl">
+            <h3 className="text-lg font-bold text-rose-600 mb-2">Delete Expense?</h3>
+            <p className="text-zinc-600 mb-6">
+              Are you sure you want to delete this expense of <strong>{formatPeso(pendingDeleteExpense.amount)}</strong>?
+              <br />This action cannot be undone.
+            </p>
+            <div className="flex gap-3">
+              <button
+                onClick={() => setPendingDeleteExpense(null)}
+                className="flex-1 py-3 rounded-xl font-semibold text-zinc-700 bg-zinc-100 hover:bg-zinc-200 transition-all"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={confirmDeleteExpense}
+                disabled={deleteSaving}
+                className="flex-1 py-3 rounded-xl font-semibold text-white bg-rose-600 hover:bg-rose-700 transition-all disabled:opacity-50"
+              >
+                {deleteSaving ? 'Deleting...' : 'Delete'}
+              </button>
+            </div>
+            {deleteModalError && (
+              <p className="text-rose-600 text-sm mt-3 text-center">{deleteModalError}</p>
+            )}
+          </div>
+        </div>
+      )}
 
     </div>
   );

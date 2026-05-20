@@ -3,49 +3,6 @@ import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import html2canvas from 'html2canvas';
 
-/**
- * ExportEngine – Professional exports for the Coffee & Tea Sales Dashboard
- */
-class ExportEngine {
-  /**
-   * Export to Excel (.xlsx)
-   */
-  static exportToExcel(data, fileNamePrefix = 'Export', titleName = '', subtitle = '', category = '', discount = '') {
-    if (!data || !Array.isArray(data) || data.length === 0) {
-      console.warn('ExportEngine: No data for Excel export');
-      return;
-    }
-
-    const dateStr = new Date().toISOString().split('T')[0];
-    let finalFileName = fileNamePrefix;
-
-    if (category && category !== 'All Categories') {
-      finalFileName += `_${category.replace(/\s+/g, '_')}`;
-    }
-    if (discount && discount !== 'All Transactions') {
-      finalFileName += `_${discount.replace(/\s+/g, '_')}`;
-    }
-    finalFileName += `_${dateStr}.xlsx`;
-
-    const worksheet = utils.json_to_sheet([]);
-    let row = 0;
-
-    if (titleName) utils.sheet_add_aoa(worksheet, [[titleName]], { origin: `A${++row}` });
-    
-    let finalSubtitle = subtitle;
-    if (category && category !== 'All Categories') finalSubtitle += ` - ${category}`;
-    if (discount && discount !== 'All Transactions') finalSubtitle += ` - ${discount}`;
-    
-    if (finalSubtitle) utils.sheet_add_aoa(worksheet, [[finalSubtitle]], { origin: `A${++row}` });
-    if (row > 0) utils.sheet_add_aoa(worksheet, [[]], { origin: `A${++row}` });
-
-    utils.sheet_add_json(worksheet, data, { origin: `A${row + 1}`, skipHeader: false });
-
-    const workbook = utils.book_new();
-    utils.book_append_sheet(workbook, worksheet, 'Report');
-    writeFile(workbook, finalFileName);
-  }
-
   /**
    * Export to PDF
    */
@@ -66,7 +23,7 @@ class ExportEngine {
       pdf.text(titleName, margin, y);
       y += 9;
 
-      // Subtitle with Category & Discount
+      // Subtitle
       let finalSubtitle = subtitle;
       if (category && category !== 'All Categories') finalSubtitle += ` - ${category}`;
       if (discount && discount !== 'All Transactions') finalSubtitle += ` - ${discount}`;
@@ -77,15 +34,19 @@ class ExportEngine {
       pdf.text(finalSubtitle, margin, y);
       y += 8;
 
-      // Date Range
+      // === DATE RANGE (This is the main change) ===
       if (dateRangeInfo) {
         pdf.setFontSize(11);
+        pdf.setFont('helvetica', 'bold');
+        pdf.setTextColor(0, 0, 0);
         pdf.text(dateRangeInfo, margin, y);
-        y += 8;
+        y += 10;
       }
 
       // Generated Date
       pdf.setFontSize(9);
+      pdf.setFont('helvetica', 'normal');
+      pdf.setTextColor(100);
       pdf.text(`Generated on: ${new Date().toLocaleDateString('en-US')} at ${new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })}`, margin, y);
       y += 15;
 
@@ -150,6 +111,5 @@ class ExportEngine {
       alert('Failed to generate PDF. Please try again.');
     }
   }
-}
 
 export default ExportEngine;

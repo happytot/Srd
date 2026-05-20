@@ -93,24 +93,18 @@ const InventoryAlerts = () => {
       if (qty <= threshold * 0.3) alertStatus = 'Critical';
       else if (qty <= threshold || inv.isLowStock) alertStatus = 'Low';
 
-      return {
+           return {
         id: inv.id,
-        item: inv.name || 'Unnamed Item',
+        item: inv.name || inv.itemName || 'Unnamed Item',
+        sku: inv.sku || inv.SKU || 'N/A',
         category: inv.category || 'Uncategorized',
-        stock: qty,
-        threshold: threshold,
-        status: alertStatus,
-        supplier: inv.supplier || 'Unknown Supplier',
+        stock: Number(inv.quantity || inv.stock) || 0,
+        unit: inv.unit || inv.measurement || 'pcs',
+        reorderLevel: Number(inv.lowStockThreshold) || 0,   // ← Use lowStockThreshold
+        isLowStock: Number(inv.quantity || inv.stock) <= Number(inv.lowStockThreshold || 10),
         lastRestock: inv.updatedAt
           ? inv.updatedAt.toDate().toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' })
           : 'N/A',
-        leadTime,
-        safetyStock,
-        dailyConsumptionRate,
-        reorderPoint: Number(reorderPoint.toFixed(1)),
-        daysUntilReorder,
-        projectedReorderDate: daysUntilReorder === 999 ? 'Sufficient Runway' : projectedReorderDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }),
-        isPastReorderDate
       };
     });
 
@@ -157,6 +151,18 @@ const InventoryAlerts = () => {
       case 'Low': return 'text-amber-600 bg-amber-50 border-amber-200';
       default: return 'text-zinc-600 bg-zinc-50 border-zinc-200';
     }
+  };
+
+  const getCategoryBadge = (category) => {
+    const colors = {
+      'Syrup': 'bg-purple-100 text-purple-700 border-purple-200',
+      'Beans': 'bg-amber-100 text-amber-700 border-amber-200',
+      'Powder': 'bg-emerald-100 text-emerald-700 border-emerald-200',
+      'Add-Ins': 'bg-pink-100 text-pink-700 border-pink-200',
+      'Other': 'bg-zinc-100 text-zinc-600 border-zinc-200',
+      'Coffee': 'bg-amber-100 text-amber-700 border-amber-200',
+    };
+    return colors[category] || 'bg-zinc-100 text-zinc-600 border-zinc-200';
   };
 
   const handleUpdateForecast = async (id) => {
@@ -247,100 +253,63 @@ const InventoryAlerts = () => {
         </div>
       )}
 
-      {/* Main Inventory Table */}
-      <div className="table-container mt-0">
-        <div className="px-6 py-4 border-b border-zinc-100 bg-zinc-50/60 flex items-center justify-between gap-3">
-          <div>
-            <p className="text-xs font-bold text-zinc-800">Inventory Alert List</p>
-            <p className="text-[10px] text-zinc-500">Color legend: <span className="font-semibold text-rose-600">Red = Critical</span>, <span className="font-semibold text-amber-600">Yellow = Low</span>, <span className="font-semibold text-zinc-500">Gray = Normal</span></p>
+      {/* Main Inventory Table - Updated Design */}
+      <div className="bg-white rounded-2xl border border-zinc-200 overflow-hidden">
+        <div className="px-6 py-4 border-b border-zinc-100 bg-zinc-50 flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <Package className="text-zinc-400" size={20} />
+            <div>
+              <p className="font-semibold text-zinc-900">Inventory Items</p>
+              <p className="text-xs text-zinc-500">Low stock highlighted in red</p>
+            </div>
           </div>
-          <span className="text-[10px] font-bold uppercase tracking-wider text-zinc-500">{filteredData.length} items</span>
+          <div className="text-sm font-medium text-zinc-500">
+            {filteredData.length} items
+          </div>
         </div>
 
         <div className="overflow-x-auto">
-          <table className="w-full border-collapse text-sm">
-            <thead>
+          <table className="w-full">
+            <thead className="bg-zinc-50 border-b border-zinc-100">
               <tr>
-                <th className="table-head-cell">Item</th>
-                <th className="table-head-cell">Category</th>
-                <th className="table-head-cell text-center">Stock</th>
-                <th className="table-head-cell text-center">Threshold</th>
-                <th className="table-head-cell">Status</th>
-                <th className="table-head-cell">Supplier</th>
-                <th className="table-head-cell">Last Restock</th>
-                {viewMode === 'Forecasting' && (
-                  <>
-                    <th className="table-head-cell text-center">Velocity</th>
-                    <th className="table-head-cell text-center">Reorder Point</th>
-                    <th className="table-head-cell">Projected Reorder Date</th>
-                    <th className="table-head-cell">Forecast Settings</th>
-                  </>
-                )}
+                <th className="px-6 py-4 text-left text-xs font-semibold text-zinc-500">ITEM</th>
+                <th className="px-6 py-4 text-left text-xs font-semibold text-zinc-500">SKU</th>
+                <th className="px-6 py-4 text-left text-xs font-semibold text-zinc-500">CATEGORY</th>
+                <th className="px-6 py-4 text-right text-xs font-semibold text-zinc-500">STOCK</th>
+                <th className="px-6 py-4 text-right text-xs font-semibold text-zinc-500">REORDER LEVEL</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-zinc-100">
               {filteredData.map((item) => (
-                <tr key={item.id} className={`table-row ${item.status === 'Critical' ? 'bg-rose-50/30' : item.status === 'Low' ? 'bg-amber-50/20' : ''}`}>
-                  <td className="table-data-cell font-bold text-zinc-900">{item.item}</td>
-                  <td className="table-data-cell text-zinc-600">{item.category}</td>
-                  <td className="table-data-cell text-center font-bold">{item.stock}</td>
-                  <td className="table-data-cell text-center text-zinc-500">{item.threshold}</td>
-                  <td className="table-data-cell">
-                    <span className={`px-2.5 py-1 rounded-full text-[10px] font-bold border ${viewMode === 'Forecasting' && item.isPastReorderDate ? 'text-violet-600 bg-violet-50 border-violet-200' : getStatusColor(item.status)}`}>
-                      {viewMode === 'Forecasting' && item.isPastReorderDate ? 'REORDER NOW' : item.status.toUpperCase()}
+                <tr
+                  key={item.id}
+                  className={`hover:bg-zinc-50 transition-colors ${item.isLowStock ? 'bg-rose-50' : ''}`}
+                >
+                  <td className="px-6 py-4 font-medium text-zinc-900">
+                    {item.item}
+                  </td>
+                  <td className="px-6 py-4 font-mono text-sm text-zinc-500">{item.sku}</td>
+                  <td className="px-6 py-4">
+                    <span className={`inline-block px-3 py-1 text-xs font-medium rounded-full border ${getCategoryBadge(item.category)}`}>
+                      {item.category}
                     </span>
                   </td>
-                  <td className="table-data-cell text-zinc-600">{item.supplier}</td>
-                  <td className="table-data-cell text-zinc-500">{item.lastRestock}</td>
-                  {viewMode === 'Forecasting' && (
-                    <>
-                      <td className="table-data-cell text-center font-medium text-zinc-700">{item.dailyConsumptionRate}/day</td>
-                      <td className="table-data-cell text-center font-medium text-zinc-700">{item.reorderPoint}</td>
-                      <td className="table-data-cell">
-                        <span className={item.isPastReorderDate ? 'font-bold text-violet-700' : 'text-zinc-600'}>
-                          {item.isPastReorderDate ? 'Immediate' : item.projectedReorderDate}
-                        </span>
-                      </td>
-                      <td className="table-data-cell">
-                        {editingItem === item.id ? (
-                          <div className="space-y-2 min-w-[220px]">
-                            <div className="grid grid-cols-2 gap-2">
-                              <input type="number" className="w-full p-1.5 border border-zinc-200 rounded text-xs" value={forecastVars.leadTime} onChange={(e) => setForecastVars({ ...forecastVars, leadTime: Number(e.target.value) })} placeholder="Lead time" />
-                              <input type="number" className="w-full p-1.5 border border-zinc-200 rounded text-xs" value={forecastVars.safetyStock} onChange={(e) => setForecastVars({ ...forecastVars, safetyStock: Number(e.target.value) })} placeholder="Safety stock" />
-                            </div>
-                            <div className="flex gap-2">
-                              <button onClick={() => handleUpdateForecast(item.id)} className="flex-1 bg-black text-white text-[10px] font-bold py-1.5 rounded hover:bg-zinc-800 transition-colors">Save</button>
-                              <button onClick={() => setEditingItem(null)} className="flex-1 bg-zinc-200 text-zinc-700 text-[10px] font-bold py-1.5 rounded hover:bg-zinc-300 transition-colors">Cancel</button>
-                            </div>
-                          </div>
-                        ) : (
-                          <button onClick={() => { setEditingItem(item.id); setForecastVars({ leadTime: item.leadTime, safetyStock: item.safetyStock }); }} className="text-[10px] font-bold text-orange-600 bg-orange-50 px-2 py-1 rounded border border-orange-100 hover:bg-orange-100 transition-colors">
-                            Edit Lead/Safety
-                          </button>
-                        )}
-                      </td>
-                    </>
-                  )}
+                  <td className={`px-6 py-4 text-right font-bold ${item.isLowStock ? 'text-rose-600' : 'text-zinc-900'}`}>
+                    {item.stock} {item.unit}
+                  </td>
+                  <td className="px-6 py-4 text-right text-zinc-500 font-medium">
+                    {item.reorderLevel} {item.unit}
+                  </td>
                 </tr>
               ))}
 
-              {loading ? (
+              {filteredData.length === 0 && (
                 <tr>
-                  <td colSpan={viewMode === 'Forecasting' ? 11 : 7} className="py-12 text-center text-zinc-400">
-                    <Loader2 className="animate-spin mb-2 inline-block" size={32} />
-                    <p>Crunching supply chain data...</p>
+                  <td colSpan="5" className="py-16 text-center text-zinc-400">
+                    No items found
                   </td>
                 </tr>
-              ) : filteredData.length === 0 ? (
-                <tr>
-                  <td colSpan={viewMode === 'Forecasting' ? 11 : 7} className="py-12 text-center text-zinc-400">
-                    <div className="flex justify-center mb-2">
-                      <Package size={48} className="text-zinc-300" />
-                    </div>
-                    <p>No inventory items found for the selected filter.</p>
-                  </td>
-                </tr>
-              ) : null}
+              )}
             </tbody>
           </table>
         </div>
