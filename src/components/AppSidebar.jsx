@@ -4,6 +4,8 @@ import { auth } from '../firebase';
 import { LogOut } from 'lucide-react';
 import { isAdminRole } from '../utils/roles';
 import { endUserSession } from '../utils/userActivityLogger';
+import { addDoc, collection, serverTimestamp } from 'firebase/firestore';
+import { db } from '../firebase';   // Make sure this path is correct
 
 const AppSidebar = ({ user, navItems, activeTab, setActiveTab }) => {
   const [showLogoutModal, setShowLogoutModal] = useState(false);
@@ -88,13 +90,24 @@ const AppSidebar = ({ user, navItems, activeTab, setActiveTab }) => {
                 </button>
                 <button
                   onClick={async () => {
-                    // End session before signing out
-                    const sessionId = `${user.uid}_SRD_${localStorage.getItem('srdClientId')}`;
-                    if (sessionId) {
-                      await endUserSession(sessionId, user);   // ← Important
+                    try {
+                      const sessionId = `${user.uid}_SRD_${localStorage.getItem('srdClientId') || ''}`;
+
+                      // End session (this will automatically log the LOGOUT)
+                      if (sessionId) {
+                        await endUserSession(sessionId, user);
+                      }
+
+                      setShowLogoutModal(false);
+
+                      // Sign out from Firebase
+                      await signOut(auth);
+
+                    } catch (error) {
+                      console.error("Logout error:", error);
+                      // Still sign out even if logging fails
+                      await signOut(auth);
                     }
-                    setShowLogoutModal(false);
-                    signOut(auth);
                   }}
                   className="flex-1 px-4 py-2 bg-rose-600 hover:bg-rose-700 text-white text-sm font-bold rounded-xl transition-colors shadow-sm"
                 >

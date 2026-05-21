@@ -1,39 +1,34 @@
 import { addDoc, collection, doc, serverTimestamp, setDoc, updateDoc } from 'firebase/firestore';
 import { db } from '../firebase';
 
-const SUBSYSTEM = 'SRD';
-const CLIENT_ID_KEY = 'srdClientId';
-
 /**
- * Generates or retrieves a persistent client ID from localStorage.
+ * Flexible User Activity Logger for SRD + POS
  */
-function getClientId() {
-  let id = localStorage.getItem(CLIENT_ID_KEY);
-  if (!id) {
-    id = `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
-    localStorage.setItem(CLIENT_ID_KEY, id);
+
+export function logUserAction(user, action, meta = {}, subsystem = 'SRD') {
+  if (!user?.uid || !action) return;
+
+  try {
+    addDoc(collection(db, 'activity_logs'), {
+      uid: user.uid,
+      name: user.name || user.email?.split('@')[0] || 'Unknown User',
+      email: user.email || '',
+      role: user.role || '',
+      subsystem: subsystem,
+      action,
+      meta: meta || {},
+      createdAt: serverTimestamp(),
+    });
+  } catch (error) {
+    console.error('Failed to log user action:', error);
   }
-  return id;
 }
 
-/**
- * Generates a unique session document ID for Firestore.
- */
-export function getSessionDocId(uid) {
-  if (!uid) throw new Error('uid is required for session ID');
-  return `${uid}_${SUBSYSTEM}_${getClientId()}`;
-}
+export async function startUserSession(user, subsystem = 'SRD') {
+  if (!user?.uid) return null;
 
-/**
- * Start a new user session + log LOGIN
- */
-export async function startUserSession(user) {
-  if (!user?.uid) {
-    console.error('startUserSession: user.uid is required');
-    return null;
-  }
-
-  const sessionId = getSessionDocId(user.uid);
+  const clientId = getClientId();
+  const sessionId = `${user.uid}_${subsystem}_${clientId}`;
   const sessionRef = doc(db, 'user_sessions', sessionId);
 
   try {
@@ -42,17 +37,17 @@ export async function startUserSession(user) {
       name: user.name || user.email || 'Unknown User',
       email: user.email || '',
       role: user.role || '',
-      subsystem: SUBSYSTEM,
+      subsystem: subsystem,
       status: 'online',
       loginAt: serverTimestamp(),
       lastSeenAt: serverTimestamp(),
-      clientId: getClientId(),
+      clientId: clientId,
     }, { merge: true });
 
-    await logUserAction(user, 'LOGIN', { 
-      subsystem: SUBSYSTEM,
-      message: 'User logged into SRD dashboard'
-    });
+    await logUserAction(user, 'LOGIN', {
+      subsystem: subsystem,
+      message: `User logged into ${subsystem} system`
+    }, subsystem);
 
     return sessionId;
   } catch (error) {
@@ -61,9 +56,28 @@ export async function startUserSession(user) {
   }
 }
 
-/**
- * Keep session alive
- */
+export async function endUserSession(sessionId, user, subsystem = 'SRD') {
+  if (!sessionId) return;
+
+  try {
+    await updateDoc(doc(db, 'user_sessions', sessionId), {
+      status: 'offline',
+      logoutAt: serverTimestamp(),
+      lastSeenAt: serverTimestamp(),
+    });
+
+    if (user) {
+      await logUserAction(user, 'LOGOUT', {
+        subsystem: subsystem,
+        message: `User logged out of ${subsystem} system`
+      }, subsystem);
+    }
+  } catch (error) {
+    console.error('Failed to end user session:', error);
+  }
+}
+
+/** Heartbeat - Keep session alive */
 export async function heartbeatSession(sessionId) {
   if (!sessionId) return;
   try {
@@ -76,48 +90,11 @@ export async function heartbeatSession(sessionId) {
   }
 }
 
-/**
- * End session + log LOGOUT
- */
-export async function endUserSession(sessionId, user) {
-  if (!sessionId) return;
-
-  try {
-    await updateDoc(doc(db, 'user_sessions', sessionId), {
-      status: 'offline',
-      logoutAt: serverTimestamp(),
-      lastSeenAt: serverTimestamp(),
-    });
-
-    if (user) {
-      await logUserAction(user, 'LOGOUT', { 
-        subsystem: SUBSYSTEM,
-        message: 'User logged out of SRD dashboard'
-      });
-    }
-  } catch (error) {
-    console.error('Failed to end user session:', error);
+function getClientId() {
+  let id = localStorage.getItem('clientId');
+  if (!id) {
+    id = `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+    localStorage.setItem('clientId', id);
   }
-}
-
-/**
- * Log any user action
- */
-export async function logUserAction(user, action, meta = {}) {
-  if (!user?.uid || !action) return;
-
-  try {
-    await addDoc(collection(db, 'activity_logs'), {
-      uid: user.uid,
-      name: user.name || user.email || 'Unknown User',
-      email: user.email || '',
-      role: user.role || '',
-      subsystem: SUBSYSTEM,
-      action,
-      meta: meta || {},
-      createdAt: serverTimestamp(),
-    });
-  } catch (error) {
-    console.error('Failed to log user action:', error);
-  }
+  return id;
 }

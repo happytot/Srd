@@ -2,6 +2,8 @@ import React, { useState } from 'react';
 import { signInWithEmailAndPassword } from 'firebase/auth';
 import { doc, getDoc, collection, query, where, getDocs } from 'firebase/firestore';
 import { auth, db } from './firebase';
+import { startUserSession } from './utils/userActivityLogger';   // ← Adjust path if needed
+
 
 const LoginPage = ({ onLogin }) => {
   const [username, setUsername] = useState('');
@@ -54,6 +56,15 @@ const LoginPage = ({ onLogin }) => {
 
       if (userDocSnap.exists()) {
         const userData = userDocSnap.data();
+
+        // Start session + mark as ONLINE
+        try {
+          const sessionId = await startUserSession(userData, 'SRD');
+          console.log("✅ Session started:", sessionId); // For debugging
+        } catch (logErr) {
+          console.warn("Failed to start session:", logErr);
+        }
+
         onLogin({
           uid: user.uid,
           email: user.email,
@@ -76,7 +87,7 @@ const LoginPage = ({ onLogin }) => {
     <div className="min-h-screen bg-zinc-50 flex flex-col justify-center py-12 sm:px-6 lg:px-8 font-sans">
       <div className="sm:mx-auto sm:w-full sm:max-w-md">
         <div className="bg-white py-10 px-4 shadow-xl shadow-black/5 sm:rounded-3xl sm:px-10 border border-zinc-100">
-          
+
           <div className="flex justify-center mb-6">
             <div className="w-32 h-32 rounded-2xl overflow-hidden flex items-center justify-center">
               <img src="/assets/coffeeandtealogo.png" alt="Coffee & Tea Logo" className="w-full h-full object-contain" />

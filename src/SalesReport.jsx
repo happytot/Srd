@@ -23,6 +23,7 @@ const SalesReport = ({ globalDateRange, globalCustomStart, globalCustomEnd, curr
   const [categoryFilter, setCategoryFilter] = useState('All Categories');
   const [paymentFilter, setPaymentFilter] = useState('All Payments');
   const [discountFilter, setDiscountFilter] = useState('All Transactions'); const [reportData, setReportData] = useState([]);
+  const [refundFilter, setRefundFilter] = useState('All Orders'); // NEW
   const [expenseRecords, setExpenseRecords] = useState([]);
   const [loading, setLoading] = useState(true);
   const [expensesLoadError, setExpensesLoadError] = useState(null);
@@ -185,8 +186,7 @@ const SalesReport = ({ globalDateRange, globalCustomStart, globalCustomEnd, curr
             amount: Number(order.totalAmount) || 0,
             originalTotalAmount: Number(order.totalAmount) || 0,
             originalItems: order.items || [],
-            status: 'Completed',
-            customer: order.baristaName || order.cashierName || 'Guest',
+            status: order.status || 'Completed',   // ← Use real status from Firestore            customer: order.baristaName || order.cashierName || 'Guest',
             paymentMethod: order.paymentMethod || 'Cash',
             gcashRefNumber: order.gcashRefNumber || ''
           };
@@ -261,7 +261,6 @@ const SalesReport = ({ globalDateRange, globalCustomStart, globalCustomEnd, curr
         if (!hasAnyDiscount) matchedItem.isMatch = false;
       }
       else {
-        // Specific discount type (PWD, Senior)
         const hasSpecificDiscount = item.originalItems.some(i =>
           i.discountType === discountFilter
         );
@@ -269,16 +268,29 @@ const SalesReport = ({ globalDateRange, globalCustomStart, globalCustomEnd, curr
       }
     }
 
+    // NEW: Refund Status Filter
+    if (refundFilter !== 'All Orders' && matchedItem.isMatch) {
+      const orderStatus = item.status || 'Completed';
+      if (refundFilter === 'Completed' && orderStatus === 'refunded') {
+        matchedItem.isMatch = false;
+      }
+      if (refundFilter === 'Refunded' && orderStatus !== 'refunded') {
+        matchedItem.isMatch = false;
+      }
+    }
+
     return matchedItem;
   }).filter(item => {
     if (!item.isMatch) return false;
 
+    // Date Filter
     let dateMatch = true;
     if (item.timestamp) {
       const itemDate = item.timestamp;
       dateMatch = itemDate >= dateRangeBounds.startCurrent && itemDate <= dateRangeBounds.endCurrent;
     }
 
+    // Payment Filter
     let paymentMatch = true;
     if (paymentFilter === 'Cash') {
       paymentMatch = item.paymentMethod === 'Cash' || !item.paymentMethod;
@@ -297,7 +309,7 @@ const SalesReport = ({ globalDateRange, globalCustomStart, globalCustomEnd, curr
   // Reset to page 1 when filters change
   useEffect(() => {
     setCurrentPage(1);
-  }, [categoryFilter, paymentFilter, discountFilter, globalDateRange, globalCustomStart, globalCustomEnd]);
+  }, [categoryFilter, paymentFilter, discountFilter, refundFilter, globalDateRange, globalCustomStart, globalCustomEnd]);
 
   const ordersInSelectedPeriod = useMemo(() => {
     return reportData.filter((item) => {
@@ -441,11 +453,15 @@ const SalesReport = ({ globalDateRange, globalCustomStart, globalCustomEnd, curr
   const averageTransaction = filteredData.length ? totalRevenue / filteredData.length : 0;
 
   const getStatusColor = (status) => {
-    switch (status) {
-      case 'Completed': return 'text-emerald-600 bg-emerald-50 border-emerald-200';
-      case 'Pending': return 'text-amber-600 bg-amber-50 border-amber-200';
-      case 'Refunded': return 'text-rose-600 bg-rose-50 border-rose-200';
-      default: return 'text-zinc-600 bg-zinc-50 border-zinc-200';
+    switch (String(status).toLowerCase()) {
+      case 'completed':
+        return 'text-emerald-600 bg-emerald-50 border-emerald-200';
+      case 'refunded':
+        return 'text-rose-600 bg-rose-50 border-rose-200';
+      case 'pending':
+        return 'text-amber-600 bg-amber-50 border-amber-200';
+      default:
+        return 'text-zinc-600 bg-zinc-50 border-zinc-200';
     }
   };
 
@@ -459,17 +475,41 @@ const SalesReport = ({ globalDateRange, globalCustomStart, globalCustomEnd, curr
 
   const getReportName = () => {
     let base = `${globalDateRange} Sales Report`;
-    if (categoryFilter !== 'All Categories') {
-      return `${base} for ${categoryFilter}`;
+
+    if (refundFilter === 'Refunded') {
+      base = `${globalDateRange} Refunded Orders`;
+    } else if (refundFilter === 'Completed') {
+      base = `${globalDateRange} Completed Orders`;
     }
+
+    if (categoryFilter !== 'All Categories') {
+      base += ` • ${categoryFilter}`;
+    }
+    if (discountFilter !== 'All Transactions') {
+      base += ` • ${discountFilter}`;
+    }
+
     return base;
   };
 
   const getFileNamePrefix = () => {
-    let base = `${globalDateRange.replace(/\s+/g, '_')}_Sales_Report`;
-    if (categoryFilter !== 'All Categories') {
-      return `${base}_${categoryFilter.replace(/\s+/g, '_')}`;
+    let base = `${globalDateRange.replace(/\s+/g, '_')}`;
+
+    if (refundFilter === 'Refunded') {
+      base += `_Refunded_Orders`;
+    } else if (refundFilter === 'Completed') {
+      base += `_Completed_Orders`;
+    } else {
+      base += `_Sales_Report`;
     }
+
+    if (categoryFilter !== 'All Categories') {
+      base += `_${categoryFilter.replace(/\s+/g, '_')}`;
+    }
+    if (discountFilter !== 'All Transactions') {
+      base += `_${discountFilter.replace(/\s+/g, '_')}`;
+    }
+
     return base;
   };
 
@@ -498,31 +538,31 @@ const SalesReport = ({ globalDateRange, globalCustomStart, globalCustomEnd, curr
     );
   };
 
-const handleExportPDF = () => {
-  const exportData = generateExportData();
-  if (exportData.length === 0) return;
+  const handleExportPDF = () => {
+    const exportData = generateExportData();
+    if (exportData.length === 0) return;
 
-  // Generate nice date range string for PDF
-  const dateRangeInfo = getDateRangeDisplay();
+    // Generate nice date range string for PDF
+    const dateRangeInfo = getDateRangeDisplay();
 
-  let reportSubtitle = `${globalDateRange} Sales Report`;
-  if (categoryFilter !== 'All Categories') {
-    reportSubtitle += ` • ${categoryFilter}`;
-  }
-  if (discountFilter !== 'All Transactions') {
-    reportSubtitle += ` • ${discountFilter}`;
-  }
+    let reportSubtitle = `${globalDateRange} Sales Report`;
+    if (categoryFilter !== 'All Categories') {
+      reportSubtitle += ` • ${categoryFilter}`;
+    }
+    if (discountFilter !== 'All Transactions') {
+      reportSubtitle += ` • ${discountFilter}`;
+    }
 
-  ExportEngine.exportToPDF(
-    exportData,
-    getFileNamePrefix(),
-    'Coffee & Tea Connection',
-    reportSubtitle,
-    dateRangeInfo,           // ← NEW: Pass date range here
-    categoryFilter,
-    discountFilter
-  );
-};
+    ExportEngine.exportToPDF(
+      exportData,
+      getFileNamePrefix(),
+      'Coffee & Tea Connection',
+      reportSubtitle,
+      dateRangeInfo,           // ← NEW: Pass date range here
+      categoryFilter,
+      discountFilter
+    );
+  };
 
   // Pagination handlers
   const goToPreviousPage = () => {
@@ -591,6 +631,17 @@ const handleExportPDF = () => {
             <option value="Senior">Senior Discount</option>
           </select>
         </div>
+
+        {/* NEW: Refund Status Filter */}
+        <select
+          value={refundFilter}
+          onChange={(e) => setRefundFilter(e.target.value)}
+          className="search-input !w-auto !bg-white border !border-zinc-200 font-medium text-zinc-700 hover:border-zinc-300 cursor-pointer"
+        >
+          <option value="All Orders">All Orders</option>
+          <option value="Completed">Completed Only</option>
+          <option value="Refunded">Refunded Only</option>
+        </select>
 
         <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto">
           <button onClick={handleExportExcel} className="flex-1 sm:flex-none px-3 py-2 bg-white border border-emerald-200 rounded-lg text-xs font-bold text-emerald-700 shadow-sm hover:bg-emerald-50 transition-all active:scale-[0.98] flex items-center justify-center">
