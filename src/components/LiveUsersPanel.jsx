@@ -16,23 +16,28 @@ const LiveUsersPanel = ({ currentUser }) => {
   // Only allow Admin OR Manager
   const hasFullAccess = isAdminRole(currentUser?.role);
 
+  // ... (imports and state remain the same)
+
   useEffect(() => {
     if (!hasFullAccess) return;
 
-    // Listen to ALL online sessions across every subsystem
     const q = query(
       collection(db, 'user_sessions'),
       where('status', '==', 'online')
     );
 
     const unsubscribe = onSnapshot(q, (snapshot) => {
-      const allSessions = snapshot.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data(),
-        lastSeenAt: doc.data().lastSeenAt?.toDate?.() ?? null
-      }));
+      // Include a fallback for pending server timestamps
+      const allSessions = snapshot.docs.map(doc => {
+        const data = doc.data();
+        return {
+          id: doc.id,
+          ...data,
+          // If serverTimestamp is pending, default to current local time to prevent instant drop-off
+          lastSeenAt: data.lastSeenAt?.toDate?.() ?? new Date()
+        };
+      });
 
-      // Deduplicate by user (uid or email)
       const uniqueUsers = {};
 
       allSessions.forEach(session => {
@@ -44,17 +49,26 @@ const LiveUsersPanel = ({ currentUser }) => {
             activeSubsystems: [session.subsystem || 'SRD']
           };
         } else {
-          const currentSubsystems = uniqueUsers[userKey].activeSubsystems || [];
-          if (!currentSubsystems.includes(session.subsystem)) {
-            uniqueUsers[userKey].activeSubsystems = [...currentSubsystems, session.subsystem || 'SRD'];
+          const existingUser = uniqueUsers[userKey];
+
+          // Merge subsystems safely
+          if (!existingUser.activeSubsystems.includes(session.subsystem)) {
+            existingUser.activeSubsystems.push(session.subsystem || 'SRD');
+          }
+
+          // CRITICAL FIX: Always keep the most recent timestamp among merged sessions
+          const existingTime = existingUser.lastSeenAt.getTime();
+          const newSessionTime = session.lastSeenAt.getTime();
+
+          if (newSessionTime > existingTime) {
+            existingUser.lastSeenAt = session.lastSeenAt;
           }
         }
       });
 
-      // Sort by most recently active
       const dedupedUsers = Object.values(uniqueUsers).sort((a, b) => {
-        const timeA = a.lastSeenAt?.getTime?.() || 0;
-        const timeB = b.lastSeenAt?.getTime?.() || 0;
+        const timeA = a.lastSeenAt.getTime();
+        const timeB = b.lastSeenAt.getTime();
         return timeB - timeA;
       });
 
@@ -64,14 +78,16 @@ const LiveUsersPanel = ({ currentUser }) => {
     return () => unsubscribe();
   }, [hasFullAccess, currentUser]);
 
-  // Hide panel completely for Staff / other roles
   if (!hasFullAccess) return null;
 
-  // Filter out ghost sessions (last seen > 3 minutes ago)
+  // Filter out ghost sessions (padded to 4 minutes to handle minor clock skew)
   const activeUsers = liveUsers.filter(user => {
-    if (!user.lastSeenAt) return false;
-    return (now - user.lastSeenAt.getTime()) <= 3 * 60 * 1000;
+    const timeDiff = now - user.lastSeenAt.getTime();
+    // Allow up to 4 minutes (4 * 60 * 1000) to account for slight device clock differences
+    return timeDiff <= 4 * 60 * 1000 && timeDiff >= -60000; // Negative check prevents dropping if client clock is slightly behind
   });
+  console.log(activeUsers);
+
 
   return (
     <div className="content-card mb-6">
