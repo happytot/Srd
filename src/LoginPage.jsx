@@ -2,7 +2,6 @@ import React, { useState } from 'react';
 import { signInWithEmailAndPassword } from 'firebase/auth';
 import { doc, getDoc, collection, query, where, getDocs } from 'firebase/firestore';
 import { auth, db } from './firebase';
-import { startUserSession } from './utils/userActivityLogger';   // ← Adjust path if needed
 
 
 const LoginPage = ({ onLogin }) => {
@@ -57,13 +56,7 @@ const LoginPage = ({ onLogin }) => {
       if (userDocSnap.exists()) {
         const userData = userDocSnap.data();
 
-        // Start session + mark as ONLINE
-        try {
-          const sessionId = await startUserSession(userData, 'SRD');
-          console.log("✅ Session started:", sessionId); // For debugging
-        } catch (logErr) {
-          console.warn("Failed to start session:", logErr);
-        }
+
 
         onLogin({
           uid: user.uid,

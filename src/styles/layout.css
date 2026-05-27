@@ -1,12 +1,20 @@
 /* --- Layout Components --- */
 .dashboard-container {
-  @apply flex h-screen overflow-hidden bg-zinc-50 font-sans text-zinc-900;
+  @apply flex h-screen overflow-hidden bg-zinc-50 font-sans text-zinc-900 relative;
 }
 
 .sidebar {
-  @apply hidden md:flex md:fixed md:inset-y-0 md:left-0 z-50 flex-col w-52 xl:w-64 bg-white border-r border-zinc-200 p-4 xl:p-6 transition-all duration-300;
+  @apply fixed inset-y-0 left-0 z-50 flex flex-col w-64 bg-white border-r border-zinc-200 p-6 transition-transform duration-300 -translate-x-full lg:translate-x-0 lg:w-52 xl:w-64 lg:p-4 xl:p-6;
+}
+
+.sidebar-open {
+  @apply translate-x-0;
 }
 
 .main-content {
-  @apply flex-1 p-4 md:p-8 overflow-y-auto h-screen md:ml-52 xl:ml-64;
+  @apply flex-1 p-4 md:p-8 overflow-y-auto h-screen w-full transition-all duration-300 lg:ml-52 xl:ml-64;
+}
+
+.sidebar-backdrop {
+  @apply fixed inset-0 z-40 bg-zinc-950/30 backdrop-blur-xs transition-opacity duration-300 lg:hidden;
 }

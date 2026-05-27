@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { auth, db } from './firebase';
-import { Loader2 } from 'lucide-react';
+import { Loader2, Menu } from 'lucide-react';
 import { doc, getDoc, collection, query, where, orderBy, onSnapshot } from 'firebase/firestore';
 import { onAuthStateChanged } from 'firebase/auth';
 
@@ -367,9 +367,15 @@ const Overview = ({ globalDateRange, globalCustomStart, globalCustomEnd }) => {
           <div className="space-y-3">
             {stats.lowStock.length > 0 ? stats.lowStock.map(item => (
               <div key={item.id} className="stock-item flex justify-between items-center">
-                <div>
+                <div className="flex items-center gap-2">
                   <span className="font-bold text-sm">{item.name}</span>
-                  <span className={`text-[10px] font-bold uppercase tracking-wider ${item.status === 'Critical' ? 'text-rose-500' : 'text-amber-500'}`}>{item.status}</span>
+                  <span className={`px-2 py-0.5 text-[9px] font-bold uppercase tracking-wider rounded-full border ${
+                    item.status === 'Critical'
+                      ? 'bg-rose-50 text-rose-600 border-rose-100'
+                      : 'bg-amber-50 text-amber-600 border-amber-100'
+                  }`}>
+                    {item.status}
+                  </span>
                 </div>
                 <button className="text-zinc-400 hover:text-black font-bold text-[10px]">RESTOCK</button>
               </div>
@@ -431,6 +437,7 @@ function App() {
   const [activeTab, setActiveTab] = useState('Overview');
   const [user, setUser] = useState(null);
   const [isAuthLoading, setIsAuthLoading] = useState(true);
+  const [sidebarOpen, setSidebarOpen] = useState(false);
 
   const [globalDateRange, setGlobalDateRange] = useState('Weekly');
   const [globalCustomStart, setGlobalCustomStart] = useState('');
@@ -500,7 +507,7 @@ useEffect(() => {
       endUserSession(sessionId, user);
     }
   };
-}, [user]);
+}, [user?.uid]);
 
   if (isAuthLoading) {
     return (
@@ -529,11 +536,31 @@ useEffect(() => {
 
   return (
     <div className="dashboard-container">
-      <AppSidebar user={user} navItems={navItems} activeTab={activeTab} setActiveTab={setActiveTab} />
+      <AppSidebar 
+        user={user} 
+        navItems={navItems} 
+        activeTab={activeTab} 
+        setActiveTab={setActiveTab} 
+        sidebarOpen={sidebarOpen}
+        setSidebarOpen={setSidebarOpen}
+      />
+
+      {sidebarOpen && (
+        <div className="sidebar-backdrop" onClick={() => setSidebarOpen(false)} />
+      )}
 
       <main className="main-content">
         <header className="flex flex-col xl:flex-row justify-between items-start xl:items-center gap-4 mb-8">
-          <h2 className="text-xl font-bold tracking-tight">{activeTab}</h2>
+          <div className="flex items-center gap-3">
+            <button
+              onClick={() => setSidebarOpen(true)}
+              className="p-2 -ml-2 rounded-xl text-zinc-600 hover:bg-zinc-100 hover:text-black lg:hidden active:scale-95 transition-all cursor-pointer flex items-center justify-center shrink-0 border border-zinc-200 bg-white shadow-sm"
+              aria-label="Open sidebar"
+            >
+              <Menu size={20} />
+            </button>
+            <h2 className="text-xl font-bold tracking-tight">{activeTab}</h2>
+          </div>
           <div className="flex flex-wrap items-center gap-4 w-full xl:w-auto">
             {['Overview', 'Sales Analytics', 'Sales Reports'].includes(activeTab) && (
               <GlobalDateFilter

@@ -1,19 +1,28 @@
 import React, { useState } from 'react';
 import { signOut } from 'firebase/auth';
 import { auth } from '../firebase';
-import { LogOut } from 'lucide-react';
+import { LogOut, X } from 'lucide-react';
 import { isAdminRole } from '../utils/roles';
 import { endUserSession } from '../utils/userActivityLogger';
 import { addDoc, collection, serverTimestamp } from 'firebase/firestore';
 import { db } from '../firebase';   // Make sure this path is correct
 
-const AppSidebar = ({ user, navItems, activeTab, setActiveTab }) => {
+const AppSidebar = ({ user, navItems, activeTab, setActiveTab, sidebarOpen, setSidebarOpen }) => {
   const [showLogoutModal, setShowLogoutModal] = useState(false);
 
   return (
-    <aside className="sidebar">
+    <aside className={`sidebar ${sidebarOpen ? 'sidebar-open' : ''}`}>
+      {/* Mobile Close Button */}
+      <button 
+        onClick={() => setSidebarOpen(false)}
+        className="absolute top-4 right-4 p-1.5 rounded-xl text-zinc-400 hover:bg-zinc-100 hover:text-black lg:hidden active:scale-95 transition-all cursor-pointer flex items-center justify-center border border-zinc-100 bg-white"
+        aria-label="Close sidebar"
+      >
+        <X size={16} />
+      </button>
+
       {/* Logo & Brand */}
-      <div className="flex items-center gap-3 mb-10">
+      <div className="flex items-center gap-3 mb-10 pr-6">
         <div className="w-14 h-14 rounded-lg overflow-hidden flex-shrink-0 flex items-center justify-center">
           <img src="/assets/coffeeandtealogo.png" alt="Coffee & Tea Logo" className="w-full h-full object-contain" />
         </div>
@@ -28,7 +37,10 @@ const AppSidebar = ({ user, navItems, activeTab, setActiveTab }) => {
         {navItems.map((item) => (
           <div
             key={item.name}
-            onClick={() => setActiveTab(item.name)}
+            onClick={() => {
+              setActiveTab(item.name);
+              setSidebarOpen(false);
+            }}
             className={`nav-item ${activeTab === item.name ? 'nav-item-active' : 'nav-item-inactive'}`}
           >
             <span>{item.icon} {item.name}</span>
@@ -91,7 +103,7 @@ const AppSidebar = ({ user, navItems, activeTab, setActiveTab }) => {
                 <button
                   onClick={async () => {
                     try {
-                      const sessionId = `${user.uid}_SRD_${localStorage.getItem('srdClientId') || ''}`;
+                      const sessionId = `${user.uid}_SRD_${localStorage.getItem('clientId') || ''}`;
 
                       // End session (this will automatically log the LOGOUT)
                       if (sessionId) {

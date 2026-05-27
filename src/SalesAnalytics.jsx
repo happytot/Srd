@@ -244,7 +244,7 @@ const SalesAnalytics = ({ globalDateRange, globalCustomStart, globalCustomEnd })
       ) : (
         <>
           {/* Metrics Cards */}
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
             <div className="content-card flex flex-col justify-between h-full hover:border-black transition-colors duration-300">
               <div>
                 <p className="text-xs font-bold text-zinc-400 uppercase tracking-wider mb-1">Total Revenue</p>

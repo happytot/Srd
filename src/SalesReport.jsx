@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { collection, query, getDocs, orderBy, addDoc, serverTimestamp, deleteDoc, doc, onSnapshot } from 'firebase/firestore';
-import { FileSpreadsheet, FileText, Loader2 } from 'lucide-react';
+import { Calendar, FileSpreadsheet, FileText, Loader2, ChevronDown } from 'lucide-react';
 import { db } from './firebase';
 import ExportEngine from './utils/ExportEngine';
 import {
@@ -39,6 +39,7 @@ const SalesReport = ({ globalDateRange, globalCustomStart, globalCustomEnd, curr
   const [deleteSaving, setDeleteSaving] = useState(false);
   const [deleteModalError, setDeleteModalError] = useState('');
   const [showSuccessModal, setShowSuccessModal] = useState(false);
+  const [isReconciliationCollapsed, setIsReconciliationCollapsed] = useState(true);
 
   // NEW: Pagination state
   const [currentPage, setCurrentPage] = useState(1);
@@ -164,21 +165,38 @@ const SalesReport = ({ globalDateRange, globalCustomStart, globalCustomEnd, curr
       try {
         const q = query(collection(db, 'orders'), orderBy('createdAt', 'desc'));
         const querySnapshot = await getDocs(q);
+        // Inside fetchOrders async function
         const data = querySnapshot.docs.map(doc => {
           const order = doc.data();
           const categories = order.items ? order.items.map(item => item.category) : [];
           const uniqueCategories = [...new Set(categories.filter(Boolean))];
 
+          // === IMPROVED BARISTA DETECTION ===
+          const barista = order.baristaName ||
+            order.cashierName ||
+            order.staffName ||
+            'Guest';
+
+          // === DISCOUNT DETECTION ===
+          const hasDiscount = !!order.discount?.type ||
+            order.items?.some(item => item.discountType && item.discountType !== 'None');
+
+          const discountType = order.discount?.type ||
+            order.items?.find(item => item.discountType && item.discountType !== 'None')?.discountType || null;
+
           return {
             id: doc.id,
-            transactionId: order.transactionNumber || order.transactionId || doc.id,   // ← Main Fix
-            date: order.createdAt ? order.createdAt.toDate().toLocaleDateString('en-US', {
-              year: 'numeric',
-              month: 'short',
-              day: 'numeric',
-              hour: '2-digit',
-              minute: '2-digit'
-            }) : 'N/A',
+            transactionId: order.transactionNumber || order.transactionId || doc.id,
+            date: order.createdAt
+              ? order.createdAt.toDate().toLocaleString('en-US', {
+                month: '2-digit',
+                day: '2-digit',
+                year: '2-digit',
+                hour: 'numeric',
+                minute: '2-digit',
+                hour12: true
+              }).replace(',', '')
+              : 'N/A',
             timestamp: order.createdAt ? order.createdAt.toDate() : new Date(0),
             product: order.items ? order.items.map(item => `${item.quantity || 1}x ${item.name}`).join(', ') : 'Unknown',
             category: uniqueCategories.length === 1 ? uniqueCategories[0] : (uniqueCategories.length > 1 ? 'Multiple' : 'Unknown'),
@@ -186,9 +204,12 @@ const SalesReport = ({ globalDateRange, globalCustomStart, globalCustomEnd, curr
             amount: Number(order.totalAmount) || 0,
             originalTotalAmount: Number(order.totalAmount) || 0,
             originalItems: order.items || [],
-            status: order.status || 'Completed',   // ← Use real status from Firestore            customer: order.baristaName || order.cashierName || 'Guest',
+            status: order.status || 'Completed',
+            barista: barista,
             paymentMethod: order.paymentMethod || 'Cash',
-            gcashRefNumber: order.gcashRefNumber || ''
+            gcashRefNumber: order.gcashRefNumber || '',
+            hasDiscount,
+            discountType
           };
         });
         setReportData(data);
@@ -577,12 +598,20 @@ const SalesReport = ({ globalDateRange, globalCustomStart, globalCustomEnd, curr
     <div id="sales-report-content" className="flex flex-col gap-6 animate-in fade-in slide-in-from-bottom-4 duration-500 bg-zinc-50 pb-8">
 
       {/* NEW: Custom Date Range Display */}
-      <div className="flex justify-between items-center bg-white p-4 rounded-xl border border-zinc-200">
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 bg-white p-4 rounded-xl border border-zinc-200 shadow-sm">
         <h1 className="text-3xl font-bold text-zinc-900">Sales Report</h1>
 
         {globalDateRange === 'Custom' && globalCustomStart && globalCustomEnd && (
-          <div className="bg-emerald-50 border border-emerald-200 text-emerald-700 px-5 py-2.5 rounded-xl text-sm font-medium">
-            📅 Coverage: {new Date(globalCustomStart).toLocaleDateString()} — {new Date(globalCustomEnd).toLocaleDateString()}
+          <div className="flex items-center gap-2 bg-black border border-zinc-800 text-white shadow-md shadow-black/10 px-4 py-2.5 rounded-xl text-xs font-semibold tracking-wide transition-all duration-300 hover:scale-[1.01] hover:shadow-lg">
+            <Calendar size={14} className="text-white animate-pulse" />
+            <span className="text-zinc-400 font-normal">Coverage:</span>
+            <span className="font-bold text-white">
+              {new Date(globalCustomStart).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+            </span>
+            <span className="text-zinc-500 font-normal">—</span>
+            <span className="font-bold text-white">
+              {new Date(globalCustomEnd).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+            </span>
           </div>
         )}
       </div>
@@ -654,7 +683,7 @@ const SalesReport = ({ globalDateRange, globalCustomStart, globalCustomEnd, curr
       </div>
 
       {/* Summary Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 lg:gap-6 mb-6">
         <div className="stat-card">
           <p className="stat-card-title">Filtered Revenue</p>
           <p className="stat-card-value">₱{totalRevenue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
@@ -672,189 +701,216 @@ const SalesReport = ({ globalDateRange, globalCustomStart, globalCustomEnd, curr
 
       {/* Cash flow & reconciliation */}
 
-      <div className="bg-white p-5 rounded-xl border border-zinc-200 shadow-sm space-y-5">
-        <div>
-          <h3 className="font-bold text-sm text-zinc-900">{'Cash flow & reconciliation'}</h3>
-          <p className="text-[11px] text-zinc-500 mt-1 max-w-3xl">
-            Totals below use the same date range as <span className="font-semibold text-zinc-600">{globalDateRange}</span> and include <span className="font-semibold text-zinc-600">all</span> orders (table filters do not change this). Digital payments (GCash, cards, etc.) are separated from cash so you can reconcile physical cash. Formula:{' '}
-            <span className="font-mono text-[10px] bg-zinc-100 px-1.5 py-0.5 rounded">Cash on hand = Total sales − Digital payments − Expenses</span>.
-          </p>
-        </div>
-
-        <div className="grid grid-cols-2 lg:grid-cols-5 gap-3">
-          <div className="rounded-lg border border-zinc-100 bg-zinc-50/80 p-3">
-            <p className="text-[10px] font-bold uppercase tracking-wider text-zinc-500">Total sales</p>
-            <p className="text-lg font-bold mt-1">₱{cashReconciliation.totalSales.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
-            <p className="text-[10px] text-zinc-400 mt-0.5">{ordersInSelectedPeriod.length} orders</p>
-          </div>
-          <div className="rounded-lg border border-sky-100 bg-sky-50/60 p-3">
-            <p className="text-[10px] font-bold uppercase tracking-wider text-sky-700">Digital / non-cash</p>
-            <p className="text-lg font-bold mt-1 text-sky-900">₱{cashReconciliation.digitalPayments.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
-            <p className="text-[10px] text-sky-700/70 mt-0.5">{cashReconciliation.digitalCount} txns · not in cash drawer</p>
-          </div>
-          <div className="rounded-lg border border-emerald-100 bg-emerald-50/60 p-3">
-            <p className="text-[10px] font-bold uppercase tracking-wider text-emerald-800">Cash sales</p>
-            <p className="text-lg font-bold mt-1 text-emerald-900">₱{cashReconciliation.cashSales.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
-            <p className="text-[10px] text-emerald-800/70 mt-0.5">{cashReconciliation.cashCount} txns · expected in drawer</p>
-          </div>
-          <div className="rounded-lg border border-amber-100 bg-amber-50/60 p-3">
-            <p className="text-[10px] font-bold uppercase tracking-wider text-amber-900">Expenses (period)</p>
-            <p className="text-lg font-bold mt-1 text-amber-950">₱{cashReconciliation.totalExpenses.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
-            <p className="text-[10px] text-amber-900/70 mt-0.5">{expensesInSelectedPeriod.length} entries</p>
-          </div>
-          <div className="rounded-lg border-2 border-black bg-black p-3 text-white col-span-2 lg:col-span-1">
-            <p className="text-[10px] font-bold uppercase tracking-wider text-zinc-300">Cash on hand</p>
-            <p className="text-xl font-bold mt-1">₱{cashReconciliation.cashOnHand.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
-            <p className="text-[10px] text-zinc-400 mt-0.5">End-of-period estimate</p>
-          </div>
-        </div>
-
-        <div className="rounded-xl border border-zinc-200 bg-zinc-50/50 p-4">
-          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-            <div>
-              <p className="text-xs font-bold text-zinc-800">Utility monitoring (electricity, water, internet)</p>
-              <p className="text-[10px] text-zinc-500 mt-1">
-                Tracks how utility expenses eat into gross sales for the selected date range.
-              </p>
-            </div>
-            <label className="text-[10px] text-zinc-600 font-semibold flex items-center gap-2">
-              Target %
-              <input
-                type="number"
-                min="0"
-                step="0.1"
-                value={utilityTargetPct}
-                onChange={(ev) => setUtilityTargetPct(Number(ev.target.value) || 0)}
-                className="expense-form-input !w-20 !px-2 !py-1.5 text-xs"
-              />
-            </label>
-          </div>
-
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mt-3">
-            <div className="rounded-lg border border-violet-100 bg-violet-50/60 p-3">
-              <p className="text-[10px] font-bold uppercase tracking-wider text-violet-700">Utility expenses</p>
-              <p className="text-lg font-bold mt-1 text-violet-900">{formatPeso(utilityExpenseTotal)}</p>
-              <p className="text-[10px] text-violet-700/70 mt-0.5">{utilityExpensesInSelectedPeriod.length} utility entries</p>
-            </div>
-            <div className="rounded-lg border border-indigo-100 bg-indigo-50/60 p-3">
-              <p className="text-[10px] font-bold uppercase tracking-wider text-indigo-700">Utility % of gross sales</p>
-              <p className="text-lg font-bold mt-1 text-indigo-900">{utilityExpensePercentOfSales.toFixed(2)}%</p>
-              <p className="text-[10px] text-indigo-700/70 mt-0.5">Gross sales: {formatPeso(cashReconciliation.totalSales)}</p>
-            </div>
-            <div className={`rounded-lg border p-3 ${utilityWithinTarget ? 'border-emerald-100 bg-emerald-50/60' : 'border-rose-100 bg-rose-50/60'}`}>
-              <p className={`text-[10px] font-bold uppercase tracking-wider ${utilityWithinTarget ? 'text-emerald-700' : 'text-rose-700'}`}>Target status</p>
-              <p className={`text-lg font-bold mt-1 ${utilityWithinTarget ? 'text-emerald-900' : 'text-rose-900'}`}>
-                {utilityWithinTarget ? 'Within target' : 'Over target'}
-              </p>
-              <p className={`text-[10px] mt-0.5 ${utilityWithinTarget ? 'text-emerald-700/70' : 'text-rose-700/70'}`}>
-                Target: {Number(utilityTargetPct).toFixed(1)}%
-              </p>
-            </div>
-          </div>
-        </div>
-
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 pt-2 border-t border-zinc-100">
-          <form onSubmit={handleExpenseFormSubmit} className="space-y-3">
-            <p className="text-xs font-bold text-zinc-800">Record expense (cash out)</p>
-            <p className="text-[10px] text-zinc-500">
-              Track money that left the register (petty cash, supplies, payouts). It is subtracted from <span className="font-semibold text-zinc-600">Cash on hand</span> for the selected date range.
-            </p>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-              <select
-                value={expenseType}
-                onChange={(ev) => setExpenseType(ev.target.value)}
-                className="expense-form-input min-w-0"
-              >
-                <option value="Operational">Operational</option>
-                <option value="Utility">Utility</option>
-                <option value="Marketing">Marketing</option>
-                <option value="Other">Other</option>
-              </select>
-              <select
-                value={expenseSubType}
-                onChange={(ev) => setExpenseSubType(ev.target.value)}
-                className="expense-form-input min-w-0"
-              >
-                <option value="">Sub-type (optional)</option>
-                <option value="Electricity">Electricity</option>
-                <option value="Water">Water</option>
-                <option value="Internet">Internet</option>
-                <option value="Supplies">Supplies</option>
-                <option value="Transport">Transport</option>
-                <option value="Other">Other</option>
-              </select>
-            </div>
-            <div className="flex flex-col sm:flex-row gap-2">
-              <input
-                type="number"
-                min="0"
-                step="0.01"
-                placeholder="Amount (₱)"
-                value={expenseAmount}
-                onChange={(ev) => setExpenseAmount(ev.target.value)}
-                className="expense-form-input min-w-0 flex-1"
-              />
-              <input
-                type="text"
-                placeholder="Note (optional)"
-                value={expenseNote}
-                onChange={(ev) => setExpenseNote(ev.target.value)}
-                className="expense-form-input min-w-0 flex-[2]"
-              />
-              <button
-                type="submit"
-                disabled={!!pendingAddExpense || expenseSaving}
-                className="px-4 py-2 bg-zinc-900 text-white text-xs font-bold rounded-lg hover:bg-zinc-800 disabled:opacity-50 shrink-0"
-              >
-                Add expense
-              </button>
-            </div>
-            {expenseFormError && <p className="text-xs text-rose-600">{expenseFormError}</p>}
-          </form>
-
+      <div className="bg-white rounded-xl border border-zinc-200 shadow-sm overflow-hidden transition-all duration-300">
+        <button
+          type="button"
+          onClick={() => setIsReconciliationCollapsed(!isReconciliationCollapsed)}
+          className="w-full text-left p-5 flex justify-between items-center bg-white hover:bg-zinc-50 transition-colors focus:outline-none cursor-pointer"
+        >
           <div>
-            <p className="text-xs font-bold text-zinc-800 mb-2">Expenses in this period</p>
-            {expensesLoadError && (
-              <p className="text-[11px] text-amber-700 bg-amber-50 border border-amber-100 rounded-lg p-2 mb-2">{expensesLoadError}</p>
-            )}
-            <div className="max-h-40 overflow-y-auto rounded-lg border border-zinc-100 divide-y divide-zinc-50 text-sm">
-              {expensesInSelectedPeriod.length === 0 ? (
-                <p className="p-3 text-zinc-400 text-xs">No expenses recorded for this range.</p>
-              ) : (
-                expensesInSelectedPeriod.map((ex) => (
-                  <div key={ex.id} className="px-3 py-2 flex justify-between gap-2 items-start">
-                    <div className="min-w-0 flex-1">
-                      <p className="font-bold text-zinc-800">{formatPeso(ex.amount)}</p>
-                      <p className="text-[9px] text-zinc-500 mt-0.5 uppercase tracking-wider">
-                        {ex.expenseType || 'Operational'}{ex.expenseSubType ? ` · ${ex.expenseSubType}` : ''}
-                      </p>
-                      {ex.description ? <p className="text-[10px] text-zinc-500 truncate">{ex.description}</p> : null}
-                      <p className="text-[9px] text-zinc-400 mt-0.5">
-                        {ex.timestamp ? ex.timestamp.toLocaleString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : ''}
-                      </p>
-                      <p className="text-[9px] text-zinc-500 mt-0.5">
-                        Recorded by {ex.createdByName || ex.createdByEmail || '—'}
-                      </p>
-                    </div>
-                    {isAdmin ? (
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setDeleteModalError('');
-                          setPendingDeleteExpense({
-                            id: ex.id,
-                            amount: ex.amount,
-                            description: ex.description || ''
-                          });
-                        }}
-                        className="shrink-0 text-[10px] font-bold uppercase tracking-wider text-rose-600 hover:text-rose-700 px-2 py-1 rounded border border-rose-200 hover:bg-rose-50"
-                      >
-                        Delete
-                      </button>
-                    ) : null}
-                  </div>
-                ))
+            <h3 className="font-bold text-sm text-zinc-900 flex items-center gap-2">
+              Cash flow & reconciliation
+            </h3>
+            <p className="text-[11px] text-zinc-500 mt-1 max-w-3xl">
+              Physical cash drawer audit and period expense recording synced to <span className="font-semibold text-zinc-600">{globalDateRange}</span>.
+            </p>
+          </div>
+          <div className="flex items-center gap-2 text-zinc-400 hover:text-zinc-600 shrink-0">
+            {isReconciliationCollapsed ? (
+              <span className="text-[10px] bg-zinc-100 text-zinc-600 font-bold px-2 py-0.5 rounded-full">
+                Show details
+              </span>
+            ) : null}
+            <div className={`transform transition-transform duration-300 ${isReconciliationCollapsed ? '' : 'rotate-180'}`}>
+              <ChevronDown size={18} />
+            </div>
+          </div>
+        </button>
+
+        <div className={`transition-all duration-550 ease-in-out overflow-hidden ${isReconciliationCollapsed ? 'max-h-0' : 'max-h-[1500px] border-t border-zinc-100 p-5 space-y-5'
+          }`}>
+          <div>
+            <p className="text-[11px] text-zinc-500 max-w-3xl leading-relaxed">
+              Totals below use the same date range as <span className="font-semibold text-zinc-600">{globalDateRange}</span> and include <span className="font-semibold text-zinc-600">all</span> orders (table filters do not change this). Digital payments (GCash, cards, etc.) are separated from cash so you can reconcile physical cash. Formula:{' '}
+              <span className="font-mono text-[10px] bg-zinc-100 px-1.5 py-0.5 rounded">Cash on hand = Total sales − Digital payments − Expenses</span>.
+            </p>
+          </div>
+
+          <div className="grid grid-cols-2 lg:grid-cols-5 gap-3">
+            <div className="rounded-lg border border-zinc-100 bg-zinc-50/80 p-3">
+              <p className="text-[10px] font-bold uppercase tracking-wider text-zinc-500">Total sales</p>
+              <p className="text-lg font-bold mt-1">₱{cashReconciliation.totalSales.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
+              <p className="text-[10px] text-zinc-400 mt-0.5">{ordersInSelectedPeriod.length} orders</p>
+            </div>
+            <div className="rounded-lg border border-sky-100 bg-sky-50/60 p-3">
+              <p className="text-[10px] font-bold uppercase tracking-wider text-sky-700">Digital / non-cash</p>
+              <p className="text-lg font-bold mt-1 text-sky-900">₱{cashReconciliation.digitalPayments.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
+              <p className="text-[10px] text-sky-700/70 mt-0.5">{cashReconciliation.digitalCount} txns · not in cash drawer</p>
+            </div>
+            <div className="rounded-lg border border-emerald-100 bg-emerald-50/60 p-3">
+              <p className="text-[10px] font-bold uppercase tracking-wider text-emerald-800">Cash sales</p>
+              <p className="text-lg font-bold mt-1 text-emerald-900">₱{cashReconciliation.cashSales.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
+              <p className="text-[10px] text-emerald-800/70 mt-0.5">{cashReconciliation.cashCount} txns · expected in drawer</p>
+            </div>
+            <div className="rounded-lg border border-amber-100 bg-amber-50/60 p-3">
+              <p className="text-[10px] font-bold uppercase tracking-wider text-amber-900">Expenses (period)</p>
+              <p className="text-lg font-bold mt-1 text-amber-950">₱{cashReconciliation.totalExpenses.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
+              <p className="text-[10px] text-amber-900/70 mt-0.5">{expensesInSelectedPeriod.length} entries</p>
+            </div>
+            <div className="rounded-lg border-2 border-black bg-black p-3 text-white col-span-2 lg:col-span-1">
+              <p className="text-[10px] font-bold uppercase tracking-wider text-zinc-300">Cash on hand</p>
+              <p className="text-xl font-bold mt-1">₱{cashReconciliation.cashOnHand.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
+              <p className="text-[10px] text-zinc-400 mt-0.5">End-of-period estimate</p>
+            </div>
+          </div>
+
+          <div className="rounded-xl border border-zinc-200 bg-zinc-50/50 p-4">
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+              <div>
+                <p className="text-xs font-bold text-zinc-800">Utility monitoring (electricity, water, internet)</p>
+                <p className="text-[10px] text-zinc-500 mt-1">
+                  Tracks how utility expenses eat into gross sales for the selected date range.
+                </p>
+              </div>
+              <label className="text-[10px] text-zinc-600 font-semibold flex items-center gap-2">
+                Target %
+                <input
+                  type="number"
+                  min="0"
+                  step="0.1"
+                  value={utilityTargetPct}
+                  onChange={(ev) => setUtilityTargetPct(Number(ev.target.value) || 0)}
+                  className="expense-form-input !w-20 !px-2 !py-1.5 text-xs"
+                />
+              </label>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mt-3">
+              <div className="rounded-lg border border-violet-100 bg-violet-50/60 p-3">
+                <p className="text-[10px] font-bold uppercase tracking-wider text-violet-700">Utility expenses</p>
+                <p className="text-lg font-bold mt-1 text-violet-900">{formatPeso(utilityExpenseTotal)}</p>
+                <p className="text-[10px] text-violet-700/70 mt-0.5">{utilityExpensesInSelectedPeriod.length} utility entries</p>
+              </div>
+              <div className="rounded-lg border border-indigo-100 bg-indigo-50/60 p-3">
+                <p className="text-[10px] font-bold uppercase tracking-wider text-indigo-700">Utility % of gross sales</p>
+                <p className="text-lg font-bold mt-1 text-indigo-900">{utilityExpensePercentOfSales.toFixed(2)}%</p>
+                <p className="text-[10px] text-indigo-700/70 mt-0.5">Gross sales: {formatPeso(cashReconciliation.totalSales)}</p>
+              </div>
+              <div className={`rounded-lg border p-3 ${utilityWithinTarget ? 'border-emerald-100 bg-emerald-50/60' : 'border-rose-100 bg-rose-50/60'}`}>
+                <p className={`text-[10px] font-bold uppercase tracking-wider ${utilityWithinTarget ? 'text-emerald-700' : 'text-rose-700'}`}>Target status</p>
+                <p className={`text-lg font-bold mt-1 ${utilityWithinTarget ? 'text-emerald-900' : 'text-rose-900'}`}>
+                  {utilityWithinTarget ? 'Within target' : 'Over target'}
+                </p>
+                <p className={`text-[10px] mt-0.5 ${utilityWithinTarget ? 'text-emerald-700/70' : 'text-rose-700/70'}`}>
+                  Target: {Number(utilityTargetPct).toFixed(1)}%
+                </p>
+              </div>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 pt-2 border-t border-zinc-100">
+            <form onSubmit={handleExpenseFormSubmit} className="space-y-3">
+              <p className="text-xs font-bold text-zinc-800">Record expense (cash out)</p>
+              <p className="text-[10px] text-zinc-500">
+                Track money that left the register (petty cash, supplies, payouts). It is subtracted from <span className="font-semibold text-zinc-600">Cash on hand</span> for the selected date range.
+              </p>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                <select
+                  value={expenseType}
+                  onChange={(ev) => setExpenseType(ev.target.value)}
+                  className="expense-form-input min-w-0"
+                >
+                  <option value="Operational">Operational</option>
+                  <option value="Utility">Utility</option>
+                  <option value="Marketing">Marketing</option>
+                  <option value="Other">Other</option>
+                </select>
+                <select
+                  value={expenseSubType}
+                  onChange={(ev) => setExpenseSubType(ev.target.value)}
+                  className="expense-form-input min-w-0"
+                >
+                  <option value="">Sub-type (optional)</option>
+                  <option value="Electricity">Electricity</option>
+                  <option value="Water">Water</option>
+                  <option value="Internet">Internet</option>
+                  <option value="Supplies">Supplies</option>
+                  <option value="Transport">Transport</option>
+                  <option value="Other">Other</option>
+                </select>
+              </div>
+              <div className="flex flex-col sm:flex-row gap-2">
+                <input
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  placeholder="Amount (₱)"
+                  value={expenseAmount}
+                  onChange={(ev) => setExpenseAmount(ev.target.value)}
+                  className="expense-form-input min-w-0 flex-1"
+                />
+                <input
+                  type="text"
+                  placeholder="Note (optional)"
+                  value={expenseNote}
+                  onChange={(ev) => setExpenseNote(ev.target.value)}
+                  className="expense-form-input min-w-0 flex-[2]"
+                />
+                <button
+                  type="submit"
+                  disabled={!!pendingAddExpense || expenseSaving}
+                  className="px-4 py-2 bg-zinc-900 text-white text-xs font-bold rounded-lg hover:bg-zinc-800 disabled:opacity-50 shrink-0"
+                >
+                  Add expense
+                </button>
+              </div>
+              {expenseFormError && <p className="text-xs text-rose-600">{expenseFormError}</p>}
+            </form>
+
+            <div>
+              <p className="text-xs font-bold text-zinc-800 mb-2">Expenses in this period</p>
+              {expensesLoadError && (
+                <p className="text-[11px] text-amber-700 bg-amber-50 border border-amber-100 rounded-lg p-2 mb-2">{expensesLoadError}</p>
               )}
+              <div className="max-h-40 overflow-y-auto rounded-lg border border-zinc-100 divide-y divide-zinc-50 text-sm">
+                {expensesInSelectedPeriod.length === 0 ? (
+                  <p className="p-3 text-zinc-400 text-xs">No expenses recorded for this range.</p>
+                ) : (
+                  expensesInSelectedPeriod.map((ex) => (
+                    <div key={ex.id} className="px-3 py-2 flex justify-between gap-2 items-start">
+                      <div className="min-w-0 flex-1">
+                        <p className="font-bold text-zinc-800">{formatPeso(ex.amount)}</p>
+                        <p className="text-[9px] text-zinc-500 mt-0.5 uppercase tracking-wider">
+                          {ex.expenseType || 'Operational'}{ex.expenseSubType ? ` · ${ex.expenseSubType}` : ''}
+                        </p>
+                        {ex.description ? <p className="text-[10px] text-zinc-500 truncate">{ex.description}</p> : null}
+                        <p className="text-[9px] text-zinc-400 mt-0.5">
+                          {ex.timestamp ? ex.timestamp.toLocaleString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : ''}
+                        </p>
+                        <p className="text-[9px] text-zinc-500 mt-0.5">
+                          Recorded by {ex.createdByName || ex.createdByEmail || '—'}
+                        </p>
+                      </div>
+                      {isAdmin ? (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setDeleteModalError('');
+                            setPendingDeleteExpense({
+                              id: ex.id,
+                              amount: ex.amount,
+                              description: ex.description || ''
+                            });
+                          }}
+                          className="shrink-0 text-[10px] font-bold uppercase tracking-wider text-rose-600 hover:text-rose-700 px-2 py-1 rounded border border-rose-200 hover:bg-rose-50"
+                        >
+                          Delete
+                        </button>
+                      ) : null}
+                    </div>
+                  ))
+                )}
+              </div>
             </div>
           </div>
         </div>
@@ -866,38 +922,53 @@ const SalesReport = ({ globalDateRange, globalCustomStart, globalCustomEnd, curr
           <table className="w-full border-collapse text-sm">
             <thead>
               <tr>
-                <th className="table-head-cell">Transaction ID</th>
-                <th className="table-head-cell">Date</th>
-                <th className="table-head-cell">Barista</th>
-                <th className="table-head-cell">Items</th>
-                <th className="table-head-cell">Amount</th>
-                <th className="table-head-cell">Payment Method</th>
-                <th className="table-head-cell">Status</th>
+                <th className="table-head-cell px-3">Transaction ID</th>
+                <th className="table-head-cell px-3">Date</th>
+                <th className="table-head-cell px-3">Barista</th>
+                <th className="table-head-cell px-4">Items</th>
+                <th className="table-head-cell px-1 text-right">Amount</th>
+                <th className="table-head-cell px-3">Payment Method</th>
+                <th className="table-head-cell px-3">Status</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-zinc-100">
               {paginatedData.map((row) => (
                 <tr key={row.id} className="table-row">
-                  <td className="table-data-cell font-mono text-zinc-500 break-all" title={row.transactionId || row.id}>
-                    {row.transactionId || row.id}
+                  <td className="table-data-cell px-3 py-3 font-mono text-zinc-500 whitespace-nowrap" title={row.transactionId}>                    {row.transactionId}
                   </td>
-                  <td className="table-data-cell text-zinc-600">{row.date}</td>
-                  <td className="table-data-cell font-medium">{row.customer}</td>
+                  <td className="table-data-cell px-3 py-3 text-zinc-600 whitespace-nowrap">{row.date}</td>
+                  {/* Barista Column */}
+                  <td className="table-data-cell font-medium text-zinc-800">
+                    {row.barista}
+                  </td>
+
                   <td className="table-data-cell">
-                    <div className="max-w-[280px]">
+                    <div className="max-w-[260px]">
                       <p className="font-bold truncate" title={row.product}>{row.product}</p>
-                      <p className="text-[10px] text-zinc-400 uppercase tracking-wider truncate" title={row.category}>{row.category}</p>
+                      <p className="text-[10px] text-zinc-400 uppercase tracking-wider truncate" title={row.category}>
+                        {row.category}
+                      </p>
                     </div>
                   </td>
-                  <td className="table-data-cell font-bold">{formatPeso(row.amount)}</td>
-                  <td className="table-data-cell">
-                    {getPaymentBadge(row.paymentMethod)}
+
+                  <td className="table-data-cell px-3 py-3 font-bold text-right">{formatPeso(row.amount)}</td>
+                  <td className="table-data-cell px-3 py-3">                    {getPaymentBadge(row.paymentMethod)}
                     {row.gcashRefNumber && <span className="text-[9px] text-zinc-400 ml-2">REF: {row.gcashRefNumber}</span>}
                   </td>
+
                   <td className="table-data-cell">
-                    <span className={`px-2.5 py-1 rounded-full text-[10px] font-bold border ${getStatusColor(row.status)}`}>
-                      {row.status}
-                    </span>
+                    <div className="flex items-center gap-2">
+                      <span className={`px-2.5 py-1 rounded-full text-[10px] font-bold border ${getStatusColor(row.status)}`}>
+                        {row.status}
+                      </span>
+
+                      {/* Discount Indicator - Clean Pill */}
+                      {row.hasDiscount && (
+                        <span className="px-2.5 py-0.5 rounded-full text-[9px] font-bold bg-amber-100 text-amber-700 border border-amber-200">
+                          {row.discountType ? `${row.discountType} DISCOUNTED` : 'DISCOUNTED'}
+                        </span>
+                      )}
+                    </div>
                   </td>
                 </tr>
               ))}

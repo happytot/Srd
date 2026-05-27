@@ -14,8 +14,8 @@ const ActivityLogs = ({ currentUser }) => {
   const [loadingInventory, setLoadingInventory] = useState(true);
 
   // Allow both Admin and Manager
-  const isAuthorized = isAdminRole(currentUser?.role) || 
-                      currentUser?.role?.toLowerCase() === 'manager';
+  const isAuthorized = isAdminRole(currentUser?.role) ||
+    currentUser?.role?.toLowerCase() === 'manager';
 
   // Filters
   const [subsystemFilter, setSubsystemFilter] = useState('All');
@@ -37,7 +37,7 @@ const ActivityLogs = ({ currentUser }) => {
 
     const q = query(collection(db, 'activity_logs'), orderBy('createdAt', 'desc'));
 
-    const unsubscribe = onSnapshot(q, 
+    const unsubscribe = onSnapshot(q,
       (snapshot) => {
         const data = snapshot.docs.map(doc => ({
           id: doc.id,
@@ -59,31 +59,68 @@ const ActivityLogs = ({ currentUser }) => {
 
   // Fetch Orders and convert to virtual activity logs
   useEffect(() => {
-    if (!isAdminRole(currentUser?.role)) return;
+    if (!isAdminRole(currentUser?.role)) {
+      setLoadingOrders(false);
+      return;
+    }
+
+    setLoadingOrders(true);
 
     const q = query(collection(db, 'orders'), orderBy('createdAt', 'desc'));
+
     const unsubscribe = onSnapshot(q, (snapshot) => {
       const data = snapshot.docs.map(doc => {
         const order = doc.data();
         const baristaName = order.baristaName || order.cashierName || 'Guest';
 
+        let customerName = 'Walk-in';
+        if (order.discount?.customerName) customerName = order.discount.customerName;
+        else if (order.discountCustomerName) customerName = order.discountCustomerName;
+        else if (order.items?.[0]?.discountCustomerName) customerName = order.items[0].discountCustomerName;
+
+        let itemNames = '—';
+        if (order.items && Array.isArray(order.items)) {
+          const formatted = order.items.map(item => `${item.quantity || 1}x ${item?.name || 'Unnamed'}`);
+          if (formatted.length > 2) {
+            itemNames = `${formatted.slice(0, 2).join(', ')} (+${formatted.length - 2} more)`;
+          } else {
+            itemNames = formatted.join(', ');
+          }
+        }
+
+        let discountInfo = null;
+        if (order.discount?.type) {
+          discountInfo = `${order.discount.type} - ${order.discount.customerName || ''}`;
+        } else if (order.items?.some(item => item?.discountType && item.discountType !== 'None')) {
+          const discItem = order.items.find(item => item?.discountType && item.discountType !== 'None');
+          if (discItem) {
+            discountInfo = `${discItem.discountType} - ${discItem.discountCustomerName || ''}`;
+          }
+        }
+
         return {
           id: doc.id,
           uid: baristaName,
-          name: baristaName,                    // ← Fixed
-          role: 'barista',                      // ← Changed to barista
+          name: baristaName,
+          role: 'barista',
           subsystem: 'POS',
           action: 'PROCESS_SALE',
           meta: {
-            amount: order.totalAmount,
-            payment: order.paymentMethod,
+            customer: customerName,
+            itemNames: itemNames,
             items: order.items?.length || 0,
-            transaction: order.transactionNumber || order.transactionId || ''
+            totalAmount: Number(order.totalAmount) || 0,
+            transactionNumber: order.transactionNumber || order.transactionId || doc.id.slice(-8),
+            discount: discountInfo,
           },
           createdAt: order.createdAt?.toDate?.() ?? null
         };
       });
       setRawOrders(data);
+      setLoadingOrders(false);
+    }, (err) => {
+      console.error("Orders Error:", err);
+      setRawOrders([]);
       setLoadingOrders(false);
     });
 
@@ -92,14 +129,18 @@ const ActivityLogs = ({ currentUser }) => {
 
   // Fetch Inventory Logs
   useEffect(() => {
-    if (!isAdminRole(currentUser?.role)) return;
+    if (!isAdminRole(currentUser?.role)) {
+      setLoadingInventory(false);
+      return;
+    }
+
+    setLoadingInventory(true);
 
     const q = query(collection(db, 'inventoryLogs'));
     const unsubscribe = onSnapshot(q, (snapshot) => {
       const data = snapshot.docs.map(doc => {
         const log = doc.data();
 
-        // Clean up meta object to only include fields that exist
         const meta = {};
         if (log.itemName || log.item) meta.item = log.itemName || log.item;
         if (log.quantity || log.qty) meta.quantity = log.quantity || log.qty;
@@ -121,6 +162,7 @@ const ActivityLogs = ({ currentUser }) => {
       setLoadingInventory(false);
     }, (error) => {
       console.error("Error fetching inventory logs:", error);
+      setRawInventoryLogs([]);
       setLoadingInventory(false);
     });
 
@@ -234,6 +276,158 @@ const ActivityLogs = ({ currentUser }) => {
   const totalPages = Math.ceil(filteredLogs.length / logsPerPage);
   const startIndex = (currentPage - 1) * logsPerPage;
   const paginatedLogs = filteredLogs.slice(startIndex, startIndex + logsPerPage);
+
+  const renderLogDetails = (log) => {
+    const action = log.action?.toUpperCase?.() || '';
+    const subsystem = log.subsystem?.toUpperCase?.() || '';
+
+    if (action === 'PROCESS_SALE' || action === 'SALE') {
+      let itemCount = 0;
+      if (typeof log.meta?.items === 'number') {
+        itemCount = log.meta.items;
+      } else if (Array.isArray(log.meta?.items)) {
+        itemCount = log.meta.items.length;
+      } else if (log.meta?.items) {
+        itemCount = parseInt(log.meta.items, 10) || 0;
+      }
+
+      let itemNamesStr = '—';
+      if (log.meta?.itemNames && typeof log.meta.itemNames === 'string') {
+        itemNamesStr = log.meta.itemNames;
+      } else if (Array.isArray(log.meta?.items)) {
+        const formatted = log.meta.items.map(item => {
+          if (typeof item === 'object' && item !== null) {
+            const qty = item.quantity || item.qty || 1;
+            const name = item.name || item.itemName || 'Unnamed';
+            return `${qty}x ${name}`;
+          }
+          return String(item);
+        });
+        if (formatted.length > 2) {
+          itemNamesStr = `${formatted.slice(0, 2).join(', ')} (+${formatted.length - 2} more)`;
+        } else {
+          itemNamesStr = formatted.join(', ');
+        }
+      } else if (log.meta?.items && typeof log.meta.items === 'string') {
+        itemNamesStr = log.meta.items;
+      }
+
+      let discountStr = '';
+      if (typeof log.meta?.discount === 'string') {
+        discountStr = log.meta.discount;
+      } else if (log.meta?.discount && typeof log.meta.discount === 'object') {
+        const type = log.meta.discount.type || '';
+        const name = log.meta.discount.customerName || '';
+        discountStr = type && name ? `${type} - ${name}` : (type || name || '');
+      } else if (log.meta?.discountType) {
+        discountStr = String(log.meta.discountType);
+      }
+
+      return (
+        <div className="text-[10px] space-y-1">
+          <div><span className="font-medium text-zinc-500">Customer:</span> <span className="font-semibold text-zinc-800">{String(log.meta?.customer || 'Walk-in')}</span></div>
+          <div><span className="font-medium text-zinc-500">Items:</span> <span className="text-zinc-700">{itemNamesStr}</span></div>
+          <div>
+            <span className="font-medium text-zinc-500">Count:</span> <span className="text-zinc-700 font-semibold">{itemCount}</span> •
+            <span className="font-medium text-zinc-500 ml-2">Total:</span> <span className="font-bold text-zinc-800">₱{Number(log.meta?.totalAmount || log.meta?.amount || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
+          </div>
+          <div><span className="font-medium text-zinc-500">Txn:</span> <span className="font-mono text-zinc-700 font-bold">{String(log.meta?.transactionNumber || log.meta?.transactionId || log.meta?.transaction || '—')}</span></div>
+
+          {discountStr && (
+            <div className="inline-block px-2 py-0.5 rounded bg-amber-50 text-amber-700 text-[9px] font-bold border border-amber-200 mt-1">
+              Discount: {discountStr}
+            </div>
+          )}
+        </div>
+      );
+    }
+
+    if (action === 'LOGIN') {
+      return (
+        <div className="text-[10px] text-zinc-600 font-medium">
+          Logged into <span className="font-bold text-zinc-900">{subsystem}</span> system
+        </div>
+      );
+    }
+
+    if (action === 'LOGOUT') {
+      return (
+        <div className="text-[10px] text-zinc-600 font-medium">
+          Logged out of <span className="font-bold text-zinc-900">{subsystem}</span> system
+        </div>
+      );
+    }
+
+    if (action === 'ADD_EXPENSE') {
+      return (
+        <div className="text-[10px] space-y-0.5">
+          <div className="font-semibold text-zinc-700">Added Expense</div>
+          <div>
+            <span className="font-medium text-zinc-500">Amount:</span> <span className="font-bold text-rose-600">₱{Number(log.meta?.amount || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
+            <span className="font-medium text-zinc-400 mx-1.5">•</span>
+            <span className="font-medium text-zinc-500">Type:</span> <span className="text-zinc-600 font-semibold">{log.meta?.expenseType || 'Operational'}</span>
+          </div>
+          {log.meta?.description && (
+            <div className="text-zinc-500 italic mt-0.5">"{log.meta.description}"</div>
+          )}
+        </div>
+      );
+    }
+
+    if (action === 'DELETE_EXPENSE') {
+      return (
+        <div className="text-[10px] space-y-0.5">
+          <div className="font-semibold text-zinc-700">Deleted Expense</div>
+          <div>
+            <span className="font-medium text-zinc-500">Amount:</span> <span className="font-bold text-zinc-600">₱{Number(log.meta?.amount || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
+          </div>
+          {log.meta?.description && (
+            <div className="text-zinc-500 italic mt-0.5">"{log.meta.description}"</div>
+          )}
+        </div>
+      );
+    }
+
+    if (subsystem === 'INVENTORY' || action.includes('INVENTORY')) {
+      return (
+        <div className="text-[10px] space-y-1">
+          <div className="font-semibold text-zinc-700">{action.replace(/_/g, ' ')}</div>
+          <div className="space-y-0.5">
+            {log.meta?.item && <div><span className="font-medium text-zinc-500">Item:</span> <span className="text-zinc-700 font-semibold">{log.meta.item}</span></div>}
+            {log.meta?.quantity !== undefined && <div><span className="font-medium text-zinc-500">Qty:</span> <span className="text-zinc-700 font-semibold">{log.meta.quantity}</span></div>}
+            {log.meta?.details && <div><span className="font-medium text-zinc-500">Details:</span> <span className="text-zinc-600">{log.meta.details}</span></div>}
+            {log.meta?.status && (
+              <span className={`inline-block px-2 py-0.5 rounded text-[9px] font-bold border mt-0.5 ${
+                log.meta.status === 'Critical' ? 'bg-rose-50 text-rose-700 border-rose-200' : 'bg-zinc-50 text-zinc-700 border-zinc-200'
+              }`}>
+                {log.meta.status}
+              </span>
+            )}
+          </div>
+        </div>
+      );
+    }
+
+    if (log.meta && Object.keys(log.meta).length > 0) {
+      if (log.meta.message) {
+        return <div className="text-[10px] text-zinc-600">{log.meta.message}</div>;
+      }
+      return (
+        <div className="text-[10px] space-y-0.5">
+          {Object.entries(log.meta).map(([key, value]) => {
+            if (typeof value === 'object' && value !== null) return null;
+            return (
+              <div key={key}>
+                <span className="font-medium text-zinc-400">{key}:</span> <span className="text-zinc-600">{String(value)}</span>
+              </div>
+            );
+          })}
+        </div>
+      );
+    }
+
+    return <div className="text-[10px] text-zinc-500">System Activity</div>;
+  };
 
 
   if (!isAuthorized) {
@@ -387,7 +581,7 @@ const ActivityLogs = ({ currentUser }) => {
             <tbody className="divide-y divide-zinc-100">
               {paginatedLogs.map((log) => (
                 <tr key={log.id} className="table-row">
-                  <td className="table-data-cell text-zinc-500">
+                  <td className="table-data-cell text-zinc-500 whitespace-nowrap">
                     {log.createdAt ? log.createdAt.toLocaleString('en-US', {
                       month: 'short',
                       day: 'numeric',
@@ -408,15 +602,7 @@ const ActivityLogs = ({ currentUser }) => {
                     </span>
                   </td>
                   <td className="table-data-cell text-zinc-600">
-                    {log.meta && Object.keys(log.meta).length > 0 ? (
-                      <div className="text-[10px] space-y-1">
-                        {Object.entries(log.meta).map(([key, value]) => (
-                          <div key={key}>
-                            <span className="font-medium">{key}:</span> {String(value)}
-                          </div>
-                        ))}
-                      </div>
-                    ) : '—'}
+                    {renderLogDetails(log)}
                   </td>
                 </tr>
               ))}

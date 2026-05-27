@@ -98,10 +98,17 @@ const InventoryAlerts = () => {
         item: inv.name || inv.itemName || 'Unnamed Item',
         sku: inv.sku || inv.SKU || 'N/A',
         category: inv.category || 'Uncategorized',
-        stock: Number(inv.quantity || inv.stock) || 0,
+        stock: qty,
         unit: inv.unit || inv.measurement || 'pcs',
-        reorderLevel: Number(inv.lowStockThreshold) || 0,   // ← Use lowStockThreshold
-        isLowStock: Number(inv.quantity || inv.stock) <= Number(inv.lowStockThreshold || 10),
+        reorderLevel: threshold,
+        isLowStock: qty <= threshold,
+        status: alertStatus,
+        daysUntilReorder,
+        projectedReorderDate,
+        isPastReorderDate,
+        reorderPoint,
+        threshold,
+        supplier: inv.supplier || 'Default Supplier',
         lastRestock: inv.updatedAt
           ? inv.updatedAt.toDate().toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' })
           : 'N/A',
